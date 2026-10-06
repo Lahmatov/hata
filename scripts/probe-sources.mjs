@@ -29,6 +29,10 @@ const SOURCES = [
   { id: 'cgd', base: 'https://www.caixaimobiliario.pt', search: '/' },
   { id: 'montepio', base: 'https://www.montepioimoveis.pt', search: '/' },
   { id: 'idealista', base: 'https://www.idealista.pt', search: '/comprar-casas/amadora/' },
+  // Public aggregators (they also index idealista listings).
+  { id: 'mitula', base: 'https://casas.mitula.pt', search: '/casas/apartamento-t3-amadora' },
+  { id: 'nestoria', base: 'https://www.nestoria.pt', search: '/amadora/apartamento/venda' },
+  { id: 'properstar', base: 'https://www.properstar.pt', search: '/portugal/amadora/comprar/apartamento' },
 ];
 
 const CHALLENGE = /captcha|cf-chl|challenge-platform|just a moment|datadome|px-captcha|_incapsula_|perimeterx|cf-turnstile|access denied|request unsuccessful/i;
