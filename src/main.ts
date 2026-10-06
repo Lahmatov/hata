@@ -31,6 +31,7 @@ async function collect(store: Store, now: string) {
   await Promise.all(active.map(async (adapter) => {
     const http = new PoliteHttp(adapter.id, { useCache: !flag('no-cache') });
     let count = 0;
+    let details = 0;
     try {
       if (adapter.fetchAll) {
         const got = await adapter.fetchAll({ kvGet: (k) => store.kvGet(k), kvSet: (k, v) => store.kvSet(k, v) });
@@ -67,11 +68,14 @@ async function collect(store: Store, now: string) {
             }
           }
           seen.push(store.upsert(raw, now));
-          if (detailed) store.markDetail(id, raw.price);
+          if (detailed) {
+            store.markDetail(id, raw.price);
+            if (++details % 20 === 0) log.info(`${adapter.id}: ${details} listing pages read so far…`);
+          }
           count++;
         }
       }
-      log.info(`${adapter.id}: ${count} candidate listings`);
+      log.info(`${adapter.id}: ${count} candidate listings (${details} listing pages read)`);
     } catch (e) {
       const reason = e instanceof BlockedError ? `blocked: ${e.detail}` : (e as Error).message;
       log.error(`${adapter.id}: ${reason}`);
@@ -113,6 +117,7 @@ async function main() {
   }
   const now = new Date().toISOString();
   log.info(`run start ${now} dry=${DRY} seed=${SEED}`);
+  log.info('first run reads every listing page (6-10 s each), so it can take 20-40 min; later runs take a few minutes');
 
   const school = await schoolPoint(store); // before collecting: the idealista API searches around it
   const { seen, failed } = await collect(store, now);
