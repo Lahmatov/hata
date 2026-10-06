@@ -38,3 +38,16 @@ test.describe('criteria filter', () => {
     expect(classify(mk({ commute_min: 40 })).verdict).toBe('reject');
   });
 });
+
+test.describe('area and commute thresholds', () => {
+  test('area below 90 m2 is rejected, unknown area is manual', () => {
+    expect(classify(mk({ area_m2: 89 })).verdict).toBe('reject');
+    expect(classify(mk({ area_m2: 90 })).verdict).toBe('match');
+    expect(classify(mk({ area_m2: null })).verdict).toBe('manual');
+  });
+  test('commute up to 20 min is not flagged as a minus', async () => {
+    const { ruleBasedProsCons } = await import('../src/summarize.ts');
+    expect(ruleBasedProsCons(mk({ commute_min: 19 }))).not.toContain('дорога');
+    expect(ruleBasedProsCons(mk({ commute_min: 22 }))).toContain('дорога 22 мин');
+  });
+});

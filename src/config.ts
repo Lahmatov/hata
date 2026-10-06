@@ -23,10 +23,11 @@ export const config = {
   criteria: {
     bedrooms: 3,
     minBathrooms: 2,
+    minAreaM2: 90,
     requireGarage: true,
     maxPrice: 415_000,
     maxPriceNegotiable: 430_000,
-    preferredCommuteMin: 15,
+    preferredCommuteMin: 20,
     hardCommuteMin: 25, // beyond this a listing is dropped
   },
 

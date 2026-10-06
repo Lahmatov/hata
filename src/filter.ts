@@ -18,6 +18,9 @@ export function classify(l: Listing): Classified {
   if (l.bedrooms === null) unknown.push('число спален');
   else if (l.bedrooms !== c.bedrooms) reject.push(`T${l.bedrooms}`);
 
+  if (l.area_m2 === null) unknown.push('площадь');
+  else if (l.area_m2 < c.minAreaM2) reject.push(`${l.area_m2} m2`);
+
   if (l.bathrooms === null) unknown.push('санузлы');
   else if (l.bathrooms < c.minBathrooms) reject.push(`${l.bathrooms} bathroom(s)`);
 
@@ -39,7 +42,8 @@ export function classify(l: Listing): Classified {
 }
 
 /** Cheap pre-filter before spending requests on detail pages. */
-export function worthEnriching(l: { price: number | null; bedrooms: number | null }) {
+export function worthEnriching(l: { price: number | null; bedrooms: number | null; area_m2: number | null }) {
   const c = config.criteria;
-  return (l.price === null || l.price <= c.maxPriceNegotiable) && (l.bedrooms === null || l.bedrooms === c.bedrooms);
+  return (l.price === null || l.price <= c.maxPriceNegotiable) && (l.bedrooms === null || l.bedrooms === c.bedrooms)
+    && (l.area_m2 === null || l.area_m2 >= c.minAreaM2);
 }
