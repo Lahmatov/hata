@@ -1,0 +1,39 @@
+name: dry-run
+# Runs the real pipeline with --dry-run (prints the digest to the log, sends nothing).
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/**']
+    paths: ['src/**', '.github/workflows/dryrun.yml']
+concurrency: dry-run
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright test
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-dryrun-${{ github.run_id }}
+          restore-keys: hata-dryrun-
+      - name: Dry run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: npx tsx src/main.ts --dry-run
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-dryrun-${{ github.run_id }}

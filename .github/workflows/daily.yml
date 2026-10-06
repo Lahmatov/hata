@@ -1,0 +1,57 @@
+name: daily-digest
+# Cron is UTC. Two triggers cover Lisbon summer (UTC+1) and winter (UTC+0); the script only proceeds
+# at 07:xx/08:xx Lisbon and sends once per day (state is kept in the Actions cache).
+on:
+  schedule:
+    - cron: '35 6 * * *'
+    - cron: '35 7 * * *'
+  workflow_dispatch:
+    inputs:
+      args:
+        description: 'Extra args, e.g. --dry-run or --force or --test-telegram'
+        required: false
+        default: ''
+concurrency: daily-digest
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-state-${{ github.run_id }}
+          restore-keys: hata-state-
+      - name: Run monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx tsx src/main.ts --lisbon-hours=7,8
+          else
+            npx tsx src/main.ts ${{ github.event.inputs.args }}
+          fi
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-state-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs
+          path: logs/
+          retention-days: 7
