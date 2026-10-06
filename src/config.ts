@@ -15,9 +15,9 @@ export const config = {
   school: {
     name: 'PaRK International School (Alfragide)',
     address: 'Estrada de Alfragide 94, 2610-015 Amadora, Portugal',
-    // Optional manual override if geocoding is off: SCHOOL_LAT / SCHOOL_LON
-    lat: process.env.SCHOOL_LAT ? Number(process.env.SCHOOL_LAT) : null,
-    lon: process.env.SCHOOL_LON ? Number(process.env.SCHOOL_LON) : null,
+    // Confirmed by the user (school entrance, Rua das Mil Flores, Alfragide). Override with SCHOOL_LAT / SCHOOL_LON.
+    lat: Number(process.env.SCHOOL_LAT || 38.735766) as number | null,
+    lon: Number(process.env.SCHOOL_LON || -9.226091) as number | null,
   },
 
   criteria: {

@@ -92,6 +92,11 @@ export class Store {
     this.db.prepare('UPDATE listings SET detail_price = ? WHERE id = ?').run(price, id);
   }
 
+  /** Drop cached commute times (e.g. after the school location changed). */
+  resetCommutes() {
+    this.db.exec('UPDATE listings SET commute_min = NULL, commute_approx = 0');
+  }
+
   markNotified(id: string, price: number | null) {
     this.db.prepare('UPDATE listings SET notified_price = ? WHERE id = ?').run(price, id);
   }
