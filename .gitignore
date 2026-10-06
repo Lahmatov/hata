@@ -1,0 +1,8 @@
+node_modules/
+probe-output/
+data/
+logs/
+.env
+dist/
+test-results/
+playwright-report/
