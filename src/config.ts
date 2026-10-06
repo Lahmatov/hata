@@ -39,7 +39,8 @@ export const config = {
 
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN ?? '',
-    chatId: process.env.TELEGRAM_CHAT_ID ?? '',
+    // One or more recipients, comma-separated (each person must press Start in the bot first).
+    chatIds: (process.env.TELEGRAM_CHAT_ID ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     maxItemsPerMessage: 15,
     maxManualItems: 15, // "check manually" can be large; show the closest ones only
   },

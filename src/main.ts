@@ -200,7 +200,8 @@ if (flag('telegram-chat-id')) {
       if (!j.ok) throw new Error(j.description);
       const chats = new Map((j.result ?? []).filter((u) => u.message).map((u) => [u.message!.chat.id, u.message!.chat]));
       if (!chats.size) console.log('No messages yet: open your bot in Telegram, press Start / send "hi", then run this again.');
-      for (const c of chats.values()) console.log(`TELEGRAM_CHAT_ID=${c.id}   (${c.first_name ?? ''} @${c.username ?? ''})`);
+      for (const c of chats.values()) console.log(`${c.id}   (${c.first_name ?? ''} @${c.username ?? ''})`);
+      if (chats.size) console.log(`\nFor .env (everyone above): TELEGRAM_CHAT_ID=${[...chats.keys()].join(',')}`);
     })
     .catch((e) => { log.error(e.message); process.exit(1); });
 } else if (flag('test-telegram')) {

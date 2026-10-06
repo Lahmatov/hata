@@ -64,8 +64,22 @@ export function buildMessages(items: DigestItem[], failed: string[], date: strin
 }
 
 export async function sendTelegram(text: string): Promise<void> {
-  const { token, chatId } = config.telegram;
-  if (!token || !chatId) throw new Error('TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set');
+  const { token, chatIds } = config.telegram;
+  if (!token || !chatIds.length) throw new Error('TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set');
+  const errors: string[] = [];
+  for (const chatId of chatIds) {
+    try {
+      await sendTo(token, chatId, text);
+    } catch (e) {
+      errors.push(`${chatId}: ${(e as Error).message}`);
+    }
+  }
+  // Fail only if nobody got it; a single bad recipient must not block the others.
+  if (errors.length === chatIds.length) throw new Error(errors.join('; '));
+  for (const e of errors) console.error(`Telegram: ${e}`);
+}
+
+async function sendTo(token: string, chatId: string, text: string): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt++) {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
