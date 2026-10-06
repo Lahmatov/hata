@@ -30,10 +30,11 @@ function renderItem(it: DigestItem, n: number): string {
 const TITLES = { new: '🆕 НОВЫЕ', drop: '📉 СНИЖЕНИЕ ЦЕНЫ', manual: '❓ ПРОВЕРИТЬ ВРУЧНУЮ' } as const;
 
 /** Builds Telegram HTML messages: ≤15 items and ≤4096 chars each. */
-export function buildMessages(items: DigestItem[], failed: string[], date: string): string[] {
+export function buildMessages(items: DigestItem[], failed: string[], date: string, hiddenManual = 0): string[] {
   const max = config.telegram.maxItemsPerMessage;
   const header = `🏠 <b>Квартиры T3 · ${esc(date)}</b>`;
-  const footer = failed.length ? `\n\n⚠️ Источники с ошибками сегодня: ${esc(failed.join(', '))}` : '\n\n✅ Все источники ответили';
+  const more = hiddenManual ? `\n\n…и ещё ${hiddenManual} для ручной проверки (дальше от школы), покажу в следующие дни.` : '';
+  const footer = more + (failed.length ? `\n\n⚠️ Источники с ошибками сегодня: ${esc(failed.join(', '))}` : '\n\n✅ Все источники ответили');
   if (!items.length) return [`${header}\nНовых объявлений и снижений цены нет.${footer}`];
 
   const blocks: { section: string; text: string }[] = [];

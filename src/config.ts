@@ -40,6 +40,7 @@ export const config = {
     token: process.env.TELEGRAM_BOT_TOKEN ?? '',
     chatId: process.env.TELEGRAM_CHAT_ID ?? '',
     maxItemsPerMessage: 15,
+    maxManualItems: 15, // "check manually" can be large; show the closest ones only
   },
 
   anthropic: {

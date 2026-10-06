@@ -27,3 +27,12 @@ test.describe('cross-portal dedupe', () => {
     expect(g.get('custojusto:2')).toBe('custojusto:2');
   });
 });
+
+test('same portal: exact re-post is grouped, similar flats are not', () => {
+  const a = mk({ id: 'imovirtual:1', source: 'imovirtual', neighborhood: 'Encosta do Sol', price: 350000, area_m2: 104 });
+  const b = mk({ id: 'imovirtual:2', source: 'imovirtual', neighborhood: 'Encosta do Sol', price: 350000, area_m2: 104 });
+  const c = mk({ id: 'imovirtual:3', source: 'imovirtual', neighborhood: 'Encosta do Sol', price: 351000, area_m2: 104 });
+  const g = groupDuplicates([a, b, c]);
+  expect(g.get('imovirtual:2')).toBe(g.get('imovirtual:1'));
+  expect(g.get('imovirtual:3')).toBe('imovirtual:3');
+});

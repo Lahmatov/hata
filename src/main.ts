@@ -123,9 +123,13 @@ async function main() {
     if (prev && (prev.leader.price ?? Infinity) <= (l.price ?? Infinity)) continue; // keep cheapest offer as leader
     byGroup.set(l.group_id, { group, leader: l, members, negotiate: c.verdict === 'negotiate', summary: '', reasons: c.reasons });
   }
-  const items = [...byGroup.values()].sort(
+  const sorted = [...byGroup.values()].sort(
     (a, b) => (a.leader.commute_min ?? 99) - (b.leader.commute_min ?? 99) || (a.leader.price ?? 0) - (b.leader.price ?? 0),
   );
+  // "Check manually" is capped (closest first); the rest stay un-notified and can surface on later days.
+  const manual = sorted.filter((i) => i.group === 'manual');
+  const items = [...sorted.filter((i) => i.group !== 'manual'), ...manual.slice(0, config.telegram.maxManualItems)];
+  const hiddenManual = Math.max(0, manual.length - config.telegram.maxManualItems);
   log.info(`digest: ${items.length} items (${items.filter((i) => i.group === 'new').length} new, ${items.filter((i) => i.group === 'drop').length} drops, ${items.filter((i) => i.group === 'manual').length} manual); failed: ${failed.length}`);
 
   if (SEED) {
@@ -136,7 +140,7 @@ async function main() {
 
   const summaries = await summarize(store, items.map((i) => i.leader));
   for (const it of items) it.summary = summaries.get(it.leader.id) ?? '';
-  const messages = buildMessages(items, failed, today.split('-').reverse().join('.'));
+  const messages = buildMessages(items, failed, today.split('-').reverse().join('.'), hiddenManual);
 
   if (DRY) {
     for (const m of messages) console.log('\n' + '─'.repeat(60) + '\n' + m.replace(/<a href="([^"]+)">([^<]+)<\/a>/g, '$2: $1').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));

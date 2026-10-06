@@ -11,7 +11,7 @@ PaRK International School (Estrada de Alfragide 94, Amadora). Время в пу
 ## Как это работает
 
 ```
-адаптеры (Imovirtual, CustoJusto) ──► SQLite (data/hata.sqlite) ──► дедупликация между порталами
+адаптеры (Imovirtual, Idealista API) ──► SQLite (data/hata.sqlite) ──► дедупликация между порталами
       │ вежливый HTTP: свой User-Agent, robots.txt,          │
       │ 6–10 с между запросами к одному сайту, кэш 12 ч,     ▼
       │ блокировка (403/429/captcha) = источник пропущен     фильтр по критериям ──► время до школы
@@ -32,14 +32,15 @@ PaRK International School (Estrada de Alfragide 94, Amadora). Время в пу
 | Источник | Доступен | Как | Примечания |
 |---|---|---|---|
 | **Imovirtual** | ✅ стабильно | JSON `__NEXT_DATA__` в HTML + страница объявления | Основной источник. Сюда же выкладывают объявления C21, Zome, ERA, RE/MAX и др. |
-| **CustoJusto** | ✅ стабильно | JSON `__NEXT_DATA__` | Санузлы и гараж есть только в тексте объявления |
+| CustoJusto | ⛔ robots.txt | — | Сайт отвечает, но robots.txt запрещает страницы поиска: адаптер написан и протестирован, но выключен |
+| **Idealista** (официальный API) | 🔑 по ключу | Search API v3.5 | Включается при `IDEALISTA_API_KEY`/`IDEALISTA_API_SECRET`; ≤ 90 запросов/мес |
 | Casa Sapo | ⚠️ blocked | — | Первый запрос прошёл, дальше 429 «tráfego fora do normal» |
 | Supercasa | ⚠️ blocked | — | То же (Cloudflare, 429) |
 | OLX | ⚠️ blocked | — | Дважды ответил, затем 403. Квартиры в основном ведут на Imovirtual (та же группа) |
 | Trovit | ⚠️ blocked | — | 401 Access Denied. Агрегатор, почти всё дублируется |
 | RE/MAX, Century 21, ERA, Zome | 🟡 только JS | — | В HTML нет объявлений, они грузятся скриптом. Их объекты есть на Imovirtual |
 | KW Portugal | ❌ | — | Таймаут на странице объектов |
-| Idealista | ❌ blocked | — | DataDome / Cloudflare. Официальный API выдаётся только по заявке |
+| Idealista (сайт) | ❌ blocked | — | DataDome / Cloudflare: сайт не трогаем, только официальный API |
 | Millennium bcp (janeladigital) | ❌ blocked | — | 429 |
 | Caixa Imobiliário (CGD) | ❌ blocked | — | 403 |
 | Santander Imóveis | 🟡 доступен | HTML | В основном коммерческая недвижимость, пока не подключён |

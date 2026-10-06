@@ -27,7 +27,13 @@ export function groupDuplicates(listings: Listing[]): Map<string, string> {
   const find = (x: string): string => (parent.get(x) === x ? x : find(parent.get(x)!));
   for (let i = 0; i < listings.length; i++) {
     for (let j = i + 1; j < listings.length; j++) {
-      if (listings[i].source !== listings[j].source && sameProperty(listings[i], listings[j])) {
+      const [a, b] = [listings[i], listings[j]];
+      // Same portal: only exact re-posts (same price, area and parish/address) count as duplicates.
+      const ok = a.source !== b.source
+        ? sameProperty(a, b)
+        : a.price === b.price && a.area_m2 === b.area_m2 && a.price !== null && a.area_m2 !== null
+          && norm(a.address ?? a.neighborhood) === norm(b.address ?? b.neighborhood) && !!norm(a.address ?? a.neighborhood);
+      if (ok) {
         parent.set(find(listings[i].id), find(listings[j].id));
       }
     }
