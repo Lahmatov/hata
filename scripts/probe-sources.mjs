@@ -18,18 +18,16 @@ const SOURCES = [
   { id: 'custojusto', base: 'https://www.custojusto.pt', search: '/lisboa/amadora/imobiliario/apartamentos' },
   { id: 'olx', base: 'https://www.olx.pt', search: '/imoveis/apartamento-casa-a-venda/apartamentos-venda/amadora/' },
   { id: 'trovit', base: 'https://casa.trovit.pt', search: '/t3-municipio-amadora' },
-  { id: 'remax', base: 'https://www.remax.pt', search: '/' },
-  { id: 'century21', base: 'https://www.century21.pt', search: '/' },
-  { id: 'era', base: 'https://www.era.pt', search: '/' },
-  { id: 'kw', base: 'https://www.kwportugal.pt', search: '/' },
-  { id: 'zome', base: 'https://www.zome.pt', search: '/' },
-  // Bank portals: domains are uncertain, several candidates are tried (one request per 6s).
-  { id: 'millennium', base: 'https://ind.millenniumbcp.pt', search: '/pt/Particulares/Pages/imoveis.aspx' },
-  { id: 'santander', base: 'https://imoveis.santander.pt', search: '/' },
+  { id: 'remax', base: 'https://www.remax.pt', search: '/pt/comprar/imoveis/habitacao/lisboa/amadora/r/t' },
+  { id: 'century21', base: 'https://www.century21.pt', search: '/comprar/imoveis/distrito-lisboa/concelho-amadora' },
+  { id: 'era', base: 'https://www.era.pt', search: '/comprar?ob=1&tp=1&ord=3&page=1' },
+  { id: 'kw', base: 'https://www.kwportugal.pt', search: '/pt/imoveis' },
+  { id: 'zome', base: 'https://www.zome.pt', search: '/pt/pesquisar/comprar-casa/apartamento/t3/l1-lisboa/l2-amadora' },
+  // Bank portals (Novo Banco and BPI have no own listing portal: their stock is on Casa Sapo / agencies).
+  { id: 'millennium', base: 'https://millenniumimoveis.janeladigital.com', search: '/Default.aspx' },
+  { id: 'santander', base: 'https://imoveis.santander.pt', search: '/imoveis' },
   { id: 'cgd', base: 'https://www.caixaimobiliario.pt', search: '/' },
-  { id: 'bpi', base: 'https://www.bancobpi.pt', search: '/particulares/casa/imoveis-bpi' },
-  { id: 'novobanco', base: 'https://www.novobanco.pt', search: '/particulares/casa/imoveis' },
-  { id: 'montepio', base: 'https://imoveis.montepio.pt', search: '/' },
+  { id: 'montepio', base: 'https://www.montepioimoveis.pt', search: '/' },
   { id: 'idealista', base: 'https://www.idealista.pt', search: '/comprar-casas/amadora/' },
 ];
 
@@ -86,7 +84,8 @@ function robotsAllows(robots, path) {
 function classify(page, robotsOk) {
   if (page.status === 0) return { verdict: 'error', notes: page.error };
   if (!robotsOk) return { verdict: 'skip (robots.txt)', notes: 'search path disallowed for *' };
-  if ([401, 403, 429, 503].includes(page.status) || CHALLENGE.test(page.body.slice(0, 200000))) {
+  // Big pages often mention "captcha" in config; only small pages with markers are interstitials.
+  if ([401, 403, 429, 503].includes(page.status) || (page.body.length < 60000 && CHALLENGE.test(page.body))) {
     const marker = page.body.match(CHALLENGE)?.[0];
     return { verdict: 'blocked', notes: `HTTP ${page.status}${marker ? `, marker "${marker}"` : ''}` };
   }

@@ -46,6 +46,25 @@ for (const file of process.argv.slice(2)) {
     } catch (e) { console.log('__NEXT_DATA__ parse error', e.message); }
   }
 
+  const ps = html.match(/window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")/)?.[1];
+  if (ps) {
+    try {
+      const j = JSON.parse(JSON.parse(ps));
+      for (const a of findListingArrays(j).slice(0, 2)) console.log(`PRERENDERED listing-like array ${a.path} (${a.len}):`, clip(JSON.stringify(a.sample), 3000));
+    } catch (e) { console.log('__PRERENDERED_STATE__ parse error', e.message); }
+  }
+  for (const block of ld) {
+    try {
+      const items = JSON.stringify(JSON.parse(block)).match(/\{"@context":"https:\/\/schema.org","@type":"(?:SingleFamilyResidence|Apartment|Residence|Accommodation|Offer)"[^]*?\}\}/g);
+      if (items) console.log('JSON-LD item sample:', clip(items[0], 2500));
+    } catch {}
+  }
+  const priceIdx = [...html.matchAll(/\d{2,3}[.\s\u00a0]\d{3}\s?(?:€|&euro;|&#x20AC;)/g)].map((m) => m.index);
+  if (priceIdx.length >= 3) {
+    const i = priceIdx[2];
+    console.log('card snippet:', html.slice(Math.max(0, i - 2500), i + 1500).replace(/\s+/g, ' '));
+  }
+
   const links = [...new Set([...html.matchAll(/href="([^"#]+)"/g)].map((m) => m[1]))];
   const listingLinks = links.filter((l) => /imove|anuncio|comprar|venda|apartamento|propert|listing/i.test(l));
   console.log(`links: ${links.length}, listing-ish (${listingLinks.length}):`, listingLinks.slice(0, 25));
