@@ -5,10 +5,17 @@
   "description": "Daily apartment-listing monitor for Greater Lisbon with a Telegram digest",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
-    "probe": "node scripts/probe-sources.mjs"
+    "start": "tsx src/main.ts",
+    "dry-run": "tsx src/main.ts --dry-run",
+    "seed": "tsx src/main.ts --seed",
+    "test-telegram": "tsx src/main.ts --test-telegram",
+    "test": "playwright test",
+    "typecheck": "tsc -p .",
+    "probe": "node scripts/probe-sources.mjs",
+    "fixtures:capture": "node scripts/capture-fixtures.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

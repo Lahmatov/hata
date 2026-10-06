@@ -1,3 +1,10 @@
+// Load .env if present (Node >= 21.7). Real environment variables take precedence.
+try {
+  process.loadEnvFile('.env');
+} catch {
+  /* no .env */
+}
+
 
 export const config = {
   userAgent: 'HataMonitor/0.1 (+https://github.com/lahmatov/hata; personal apartment search, low rate)',
