@@ -56,3 +56,13 @@ for (const [name, adapter] of [['imovirtual', imovirtual], ['custojusto', custoj
     }
   });
 }
+
+test.describe('Idealista API adapter', () => {
+  test('maps API elements; parking counts only when included in price', async () => {
+    const { parseIdealista } = await import('../src/adapters/idealista.ts');
+    const ls = parseIdealista(JSON.parse(fx('idealista-search.json')));
+    expect(ls[0]).toMatchObject({ sourceId: '34000001', price: 410000, bedrooms: 3, bathrooms: 2, garage: true, elevator: true, condition: 'good' });
+    expect(ls[1].garage).toBe(false);
+    expect(ls[2]).toMatchObject({ garage: null, condition: 'needs_renovation' });
+  });
+});

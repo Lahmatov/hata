@@ -47,6 +47,10 @@ export interface Http {
 export interface Adapter {
   id: string;
   name: string;
+  /** Optional: true when the adapter is configured (e.g. API key present). Default: enabled. */
+  enabled?(): boolean;
+  /** Optional alternative to searchUrls/parse for APIs (auth, POST, quotas). */
+  fetchAll?(ctx: { kvGet: <T>(k: string) => T | undefined; kvSet: (k: string, v: unknown) => void }): Promise<RawListing[]>;
   /** Search-result URLs to fetch for the configured areas. */
   searchUrls(): string[];
   /** Pure parser: HTML/JSON of one search page -> listings. Tested against saved fixtures. */

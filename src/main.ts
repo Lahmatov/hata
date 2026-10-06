@@ -24,14 +24,21 @@ const lisbonNow = () => new Date().toLocaleString('sv-SE', { timeZone: 'Europe/L
 async function collect(store: Store, now: string) {
   const failed: string[] = [];
   const seen: { listing: Listing; isNew: boolean; priceDrop: boolean }[] = [];
-  const active = adapters.filter((a) => !ONLY || ONLY.includes(a.id));
+  const active = adapters.filter((a) => (!ONLY || ONLY.includes(a.id)) && (a.enabled?.() ?? true));
 
   // Sources run in parallel; requests within one source are sequential and rate-limited.
   await Promise.all(active.map(async (adapter) => {
     const http = new PoliteHttp(adapter.id, { useCache: !flag('no-cache') });
     let count = 0;
     try {
-      const queue = adapter.searchUrls().map((url) => ({ url, pageNo: 1 }));
+      if (adapter.fetchAll) {
+        const got = await adapter.fetchAll({ kvGet: (k) => store.kvGet(k), kvSet: (k, v) => store.kvSet(k, v) });
+        for (const raw of got.filter((r) => worthEnriching(r) && inTargetArea(r.municipality, r.neighborhood, r.address))) {
+          seen.push(store.upsert(raw, now));
+          count++;
+        }
+      }
+      const queue = adapter.fetchAll ? [] : adapter.searchUrls().map((url) => ({ url, pageNo: 1 }));
       while (queue.length) {
         const { url, pageNo } = queue.shift()!;
         const page = await http.get(url);
@@ -82,6 +89,7 @@ async function main() {
   const now = new Date().toISOString();
   log.info(`run start ${now} dry=${DRY} seed=${SEED}`);
 
+  const school = await schoolPoint(store); // before collecting: the idealista API searches around it
   const { seen, failed } = await collect(store, now);
 
   // Cross-portal duplicates over everything seen in the last 60 days.
@@ -89,7 +97,6 @@ async function main() {
   for (const [id, gid] of groupDuplicates(recent)) store.setGroup(id, gid);
 
   // Commute for listings that still lack it.
-  const school = await schoolPoint(store);
   if (!school) log.warn('school location unknown: set SCHOOL_LAT/SCHOOL_LON');
   for (const s of seen) {
     const l = store.get(s.listing.id)!;

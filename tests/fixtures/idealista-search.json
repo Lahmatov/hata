@@ -1,0 +1,5 @@
+{"elementList":[
+ {"propertyCode":"34000001","url":"https://www.idealista.pt/imovel/34000001/","price":410000,"size":115,"rooms":3,"bathrooms":2,"floor":"3","hasLift":true,"status":"good","address":"Rua X","neighborhood":"Alfragide","municipality":"Amadora","latitude":38.73,"longitude":-9.22,"propertyType":"flat","parkingSpace":{"hasParkingSpace":true,"isParkingSpaceIncludedInPrice":true},"suggestedTexts":{"title":"Apartamento T3 em Alfragide"}},
+ {"propertyCode":"34000002","url":"https://www.idealista.pt/imovel/34000002/","price":390000,"size":100,"rooms":3,"bathrooms":2,"municipality":"Oeiras","propertyType":"flat","parkingSpace":{"hasParkingSpace":true,"isParkingSpaceIncludedInPrice":false}},
+ {"propertyCode":"34000003","url":"https://www.idealista.pt/imovel/34000003/","price":380000,"size":98,"rooms":3,"bathrooms":1,"status":"renew","municipality":"Amadora","propertyType":"flat"}
+]}
