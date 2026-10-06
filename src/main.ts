@@ -1,3 +1,4 @@
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { adapters } from './adapters/index.ts';
 import { config, inTargetArea } from './config.ts';
 import { Store } from './db.ts';
@@ -42,7 +43,10 @@ async function collect(store: Store, now: string) {
       while (queue.length) {
         const { url, pageNo } = queue.shift()!;
         const page = await http.get(url);
-        if (page.status >= 400) throw new Error(`HTTP ${page.status} on ${url}`);
+        if (page.status >= 400) {
+          log.warn(`${adapter.id}: HTTP ${page.status} on ${url}, skipping this search`);
+          continue;
+        }
         const next = adapter.nextPageUrl?.(page.body, url, pageNo);
         if (next && pageNo < (adapter.maxPages ?? 3)) queue.push({ url: next, pageNo: pageNo + 1 });
         const all = adapter.parse(page.body, url);
@@ -77,10 +81,29 @@ async function collect(store: Store, now: string) {
   return { seen, failed };
 }
 
+/** Only one run at a time (launchd + a manual run would double the requests to every site). */
+function acquireLock(): boolean {
+  const file = `${config.dataDir}/run.lock`;
+  try {
+    mkdirSync(config.dataDir, { recursive: true });
+    const pid = Number(readFileSync(file, 'utf8'));
+    if (pid && pid !== process.pid) {
+      try { process.kill(pid, 0); return false; } catch { /* stale lock */ }
+    }
+  } catch { /* no lock */ }
+  writeFileSync(file, String(process.pid));
+  process.on('exit', () => { try { unlinkSync(file); } catch { /* ignore */ } });
+  return true;
+}
+
 async function main() {
   const [today, hour] = [lisbonNow().slice(0, 10), Number(lisbonNow().slice(11, 13))];
   if (LISBON_HOURS && !LISBON_HOURS.includes(hour) && !flag('force')) {
     log.info(`Lisbon hour is ${hour}, not in ${LISBON_HOURS}; exiting`);
+    return;
+  }
+  if (!acquireLock()) {
+    log.warn('another run is in progress (data/run.lock); exiting');
     return;
   }
   const store = new Store();
@@ -121,7 +144,9 @@ async function main() {
     const l = store.get(s.listing.id)!;
     const c = classify(l);
     if (c.verdict === 'reject') continue;
-    const members = recent.filter((r) => store.get(r.id)!.group_id === l.group_id).map((r) => store.get(r.id)!);
+    // Links shown: same property on other portals, still seen within the last week (no dead links).
+    const members = recent.map((r) => store.get(r.id)!)
+      .filter((m) => m.group_id === l.group_id && Date.now() - Date.parse(m.last_seen) < 7 * 86400_000);
     const groupNotified = members.some((m) => store.notifiedPrice(m.id) !== null);
     const lastTold = Math.min(...members.map((m) => store.notifiedPrice(m.id) ?? Infinity));
     let group: DigestItem['group'] | null = null;

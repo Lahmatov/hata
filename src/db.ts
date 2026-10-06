@@ -21,6 +21,9 @@ export class Store {
   constructor(file = `${config.dataDir}/hata.sqlite`) {
     if (file !== ':memory:') mkdirSync(config.dataDir, { recursive: true });
     this.db = new DatabaseSync(file);
+    this.db.exec('PRAGMA busy_timeout = 10000');
+    // One-off cleanup: early Trovit rows were keyed by per-view tracking links.
+    try { this.db.exec("DELETE FROM listings WHERE source = 'trovit' AND url LIKE 'https://clk.%'"); } catch { /* table not created yet */ }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS listings (
         id TEXT PRIMARY KEY, source TEXT, sourceId TEXT, url TEXT, title TEXT,

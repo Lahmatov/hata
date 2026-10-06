@@ -5,7 +5,16 @@ import { bedroomsFromT, factsFromText } from './text.ts';
 // Trovit is a public aggregator (it also indexes listings from portals we can't read directly).
 // We only read its own result pages; outgoing links are kept as-is and never followed.
 const BASE = 'https://casa.trovit.pt';
-const SEARCHES = ['/t3-municipio-amadora', '/t3-municipio-oeiras', '/t3-queluz', '/t3-rio-de-mouro'];
+const SEARCHES = ['/t3-municipio-amadora', '/t3-municipio-oeiras', '/t3-municipio-sintra'];
+
+/** Links go through a click tracker whose params change on every page view; keep the stable detail page. */
+export function stableLink(href: string): { url: string; id: string } {
+  const u = new URL(href, BASE);
+  const detail = u.searchParams.get('detailPageUrl');
+  const adId = u.searchParams.get('adId') ?? detail?.match(/detail\/([^?]+)/)?.[1] ?? null;
+  const clean = detail ? new URL(detail).origin + new URL(detail).pathname : `${u.origin}${u.pathname}`;
+  return { url: clean, id: adId ?? clean };
+}
 
 const num = (s: string | undefined) => {
   const n = Number((s ?? '').replace(/[^\d,]/g, '').replace(',', '.'));
@@ -45,11 +54,11 @@ export const trovit: Adapter = {
       const description = el.find('.snippet-listing-content-header-description').text().replace(/\s+/g, ' ').trim() || null;
       const meta = ld[i] ?? {};
       const facts = factsFromText(`${title} ${all} ${meta.description ?? ''}`);
-      const id = el.attr('data-id') ?? el.attr('id') ?? href.match(/[?&](?:id|cod)=([^&]+)/)?.[1] ?? href;
+      const stable = stableLink(href);
       return {
         source: 'trovit',
-        sourceId: String(id),
-        url: new URL(href, BASE).toString(),
+        sourceId: stable.id,
+        url: stable.url,
         title,
         price: num(all.match(/(\d{1,3}(?:[ . ]\d{3})+)\s?€/)?.[1]),
         area_m2: num(all.match(/(\d{2,4}(?:[.,]\d+)?)\s?m²/)?.[1]),

@@ -100,8 +100,8 @@ test.describe('Trovit adapter', () => {
     const { trovit } = await import('../src/adapters/trovit.ts');
     const ls = trovit.parse(fx('trovit-search.html'), 'https://casa.trovit.pt/t3-municipio-amadora');
     expect(ls[0]).toMatchObject({
-      source: 'trovit', sourceId: 'tv1', price: 395000, area_m2: 110, bedrooms: 3, bathrooms: 2, garage: true,
-      municipality: 'Amadora', url: 'https://casa.trovit.pt/listing/apartamento-1.html?origin=1',
+      source: 'trovit', sourceId: 'trovit-PT-111', price: 395000, area_m2: 110, bedrooms: 3, bathrooms: 2, garage: true,
+      municipality: 'Amadora', url: 'https://casa.trovit.pt/detail/trovit-PT-111',
     });
     expect(ls[1]).toMatchObject({ bedrooms: 2, bathrooms: 1 });
   });
