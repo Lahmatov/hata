@@ -1,0 +1,29 @@
+name: probe-sources
+# Step 0: plain-request accessibility check of every candidate source from a GitHub-hosted runner.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - scripts/probe-sources.mjs
+      - .github/workflows/probe.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/probe-sources.mjs
+      - run: cat probe-output/report.md >> "$GITHUB_STEP_SUMMARY"
+        if: always()
+      # Raw pages are kept only briefly as a private-ish artifact for building fixtures; never committed.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-output
+          path: probe-output/
+          retention-days: 3
