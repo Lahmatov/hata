@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/sample-source.mjs imovirtual custojusto olx
+      - run: node scripts/sample-source.mjs imovirtual2 custojusto2 olx2
       # Raw pages are kept only briefly as a private-ish artifact for building fixtures; never committed.
       - uses: actions/upload-artifact@v4
         if: always()

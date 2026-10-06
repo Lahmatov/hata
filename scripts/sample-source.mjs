@@ -31,6 +31,43 @@ await mkdir('probe-output/samples', { recursive: true });
 const save = (name, html) => writeFile(`probe-output/samples/${name}.html`, html);
 
 const SOURCES = {
+  async imovirtual2() {
+    const base = 'https://www.imovirtual.com/pt/resultados/comprar/apartamento,t3/lisboa/amadora';
+    const html = await get(`${base}?priceMax=430000&by=LATEST&direction=DESC&limit=72`);
+    const sa = nextData(html).props.pageProps.data.searchAds;
+    console.log('filtered pagination:', JSON.stringify(sa.pagination), 'rooms:', [...new Set(sa.items.map((i) => i.roomsNumber))], 'max price:', Math.max(...sa.items.map((i) => i.totalPrice?.value ?? 0)));
+    console.log('titles vs rooms:', sa.items.slice(0, 6).map((i) => `${i.roomsNumber} | ${i.title.slice(0, 50)}`));
+    const sintra = nextData(await get('https://www.imovirtual.com/pt/resultados/comprar/apartamento,t3/lisboa/sintra?priceMax=430000')).props.pageProps.data.searchAds;
+    console.log('sintra parishes:', sintra.locationsObjects?.[0]?.children?.map((c) => c.id), 'total', sintra.pagination.totalItems);
+    const oeiras = nextData(await get('https://www.imovirtual.com/pt/resultados/comprar/apartamento,t3/lisboa/oeiras?priceMax=430000')).props.pageProps.data.searchAds;
+    console.log('oeiras parishes:', oeiras.locationsObjects?.[0]?.children?.map((c) => c.id), 'total', oeiras.pagination.totalItems);
+    for (const it of sa.items.slice(0, 2)) {
+      const ad = nextData(await get(`https://www.imovirtual.com/pt/anuncio/${it.slug}`)).props.pageProps.ad;
+      console.log(`\n### detail ${it.slug}`);
+      console.log('characteristics:', JSON.stringify(ad.characteristics.map((c) => [c.key, c.value, c.localizedValue])));
+      console.log('features:', JSON.stringify(ad.features)?.slice(0, 1500));
+      console.log('featuresWithoutCategory:', JSON.stringify(ad.featuresWithoutCategory)?.slice(0, 800));
+      console.log('featuresByCategory:', JSON.stringify(ad.featuresByCategory)?.slice(0, 1500));
+      console.log('topInformation:', JSON.stringify(ad.topInformation)?.slice(0, 1500));
+      console.log('additionalInformation:', JSON.stringify(ad.additionalInformation)?.slice(0, 1500));
+      console.log('target keys:', JSON.stringify(ad.target).slice(0, 1200));
+      console.log('description head:', String(ad.description).replace(/<[^>]+>/g, ' ').slice(0, 400));
+    }
+  },
+  async custojusto2() {
+    for (const area of ['oeiras', 'sintra']) {
+      const pp = nextData(await get(`https://www.custojusto.pt/lisboa/${area}/imobiliario/apartamentos-venda`)).props.pageProps;
+      console.log(area, 'items', pp.listItems.length, 'parishes', [...new Set(pp.listItems.map((i) => i.locationNames?.parish))].slice(0, 15), 'rooms', [...new Set(pp.listItems.map((i) => i.params?.rooms))]);
+    }
+    const t3 = nextData(await get('https://www.custojusto.pt/lisboa/amadora/imobiliario/apartamentos-venda?ros=4&roe=4')).props.pageProps;
+    console.log('rooms filter ros/roe=4 ->', [...new Set(t3.listItems.map((i) => i.params?.rooms))], t3.listItems.length);
+    const d = nextData(await get(`https://www.custojusto.pt${t3.listItems.find((i) => /T3/.test(i.params?.rooms ?? ''))?.url ?? t3.listItems[0].url}`)).props.pageProps.adData;
+    console.log('detail body:', d.body.slice(0, 1500));
+  },
+  async olx2() {
+    const r = await fetch('https://www.olx.pt/imoveis/apartamento-casa-a-venda/apartamentos-venda/amadora/', { headers: { 'User-Agent': UA } });
+    console.log('olx plain URL ->', r.status);
+  },
   async imovirtual() {
     const html = await get('https://www.imovirtual.com/pt/resultados/comprar/apartamento,t3/lisboa/amadora');
     await save('imovirtual-search', html);
