@@ -160,7 +160,18 @@ async function main() {
   log.info(`sent ${messages.length} message(s)`);
 }
 
-if (flag('test-telegram')) {
+if (flag('telegram-chat-id')) {
+  // Prints chat ids of people who wrote to the bot (send /start to the bot first).
+  fetch(`https://api.telegram.org/bot${config.telegram.token}/getUpdates`)
+    .then((r) => r.json() as Promise<{ ok: boolean; description?: string; result?: { message?: { chat: { id: number; first_name?: string; username?: string } } }[] }>)
+    .then((j) => {
+      if (!j.ok) throw new Error(j.description);
+      const chats = new Map((j.result ?? []).filter((u) => u.message).map((u) => [u.message!.chat.id, u.message!.chat]));
+      if (!chats.size) console.log('No messages yet: open your bot in Telegram, press Start / send "hi", then run this again.');
+      for (const c of chats.values()) console.log(`TELEGRAM_CHAT_ID=${c.id}   (${c.first_name ?? ''} @${c.username ?? ''})`);
+    })
+    .catch((e) => { log.error(e.message); process.exit(1); });
+} else if (flag('test-telegram')) {
   sendTelegram('✅ Хата: тестовое сообщение. Бот настроен, ежедневный дайджест придёт в 08:00 (Лиссабон).')
     .then(() => log.info('test message sent'))
     .catch((e) => { log.error(e.message); process.exit(1); });

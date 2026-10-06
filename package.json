@@ -15,7 +15,8 @@
     "test": "playwright test",
     "typecheck": "tsc -p .",
     "probe": "node scripts/probe-sources.mjs",
-    "fixtures:capture": "node scripts/capture-fixtures.mjs"
+    "fixtures:capture": "node scripts/capture-fixtures.mjs",
+    "telegram-chat-id": "tsx src/main.ts --telegram-chat-id"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
