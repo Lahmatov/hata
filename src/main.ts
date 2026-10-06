@@ -97,6 +97,7 @@ async function main() {
   for (const [id, gid] of groupDuplicates(recent)) store.setGroup(id, gid);
 
   // Commute for listings that still lack it.
+  if (school) log.info(`school at ${school.lat.toFixed(5)},${school.lon.toFixed(5)} (https://www.openstreetmap.org/?mlat=${school.lat}&mlon=${school.lon}#map=17/${school.lat}/${school.lon})`);
   if (!school) log.warn('school location unknown: set SCHOOL_LAT/SCHOOL_LON');
   for (const s of seen) {
     const l = store.get(s.listing.id)!;

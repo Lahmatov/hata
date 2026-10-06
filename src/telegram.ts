@@ -23,7 +23,7 @@ function renderItem(it: DigestItem, n: number): string {
     ? `\n📉 было ${fmtEur(l.prev_price)} → ${fmtEur(l.price)} (${(((l.price - l.prev_price) / l.prev_price) * 100).toFixed(1)}%)`
     : '';
   const manual = it.group === 'manual' && it.reasons.length ? `\n❓ неизвестно: ${esc(it.reasons.join(', '))}` : '';
-  const links = it.members.map((m) => `<a href="${esc(m.url)}">${esc(m.source)}</a>`).join(' · ');
+  const links = [...new Map(it.members.map((m) => [m.url, m])).values()].map((m) => `<a href="${esc(m.url)}">${esc(m.source)}</a>`).join(' · ');
   return `${head}${drop}\n${esc(factsLine(l))}\n${esc(it.summary)}${manual}\n🔗 ${links}`;
 }
 
