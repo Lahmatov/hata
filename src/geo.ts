@@ -7,6 +7,7 @@ export interface Point { lat: number; lon: number }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let lastNominatim = 0;
+let lastOsrm = 0;
 
 /** JSON API call with retries/backoff (APIs, not scraped pages: robots.txt does not apply). */
 async function api<T>(url: string, init: RequestInit = {}, attempts = 3): Promise<T> {
@@ -89,6 +90,9 @@ export async function driveMinutes(store: Store, from: Point, to: Point): Promis
       const s = r.routes?.[0]?.duration;
       min = s ? Number.parseInt(s, 10) / 60 : null;
     } else {
+      const wait = lastOsrm + 1100 - Date.now(); // public OSRM demo server: ≤ 1 req/s
+      if (wait > 0) await sleep(wait);
+      lastOsrm = Date.now();
       const r = await api<{ routes?: { duration: number }[] }>(
         `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`,
       );

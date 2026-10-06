@@ -121,6 +121,7 @@ export class PoliteHttp implements Http {
       } catch (e) {
         if (e instanceof BlockedError) throw e;
         lastErr = e;
+        if (attempt === config.maxRetries) break;
         const backoff = 2000 * 2 ** attempt;
         log.warn(`${this.source}: ${url} failed (${String((e as Error).message)}), retry in ${backoff / 1000}s`);
         await sleep(backoff);

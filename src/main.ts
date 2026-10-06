@@ -93,7 +93,7 @@ async function main() {
   if (!school) log.warn('school location unknown: set SCHOOL_LAT/SCHOOL_LON');
   for (const s of seen) {
     const l = store.get(s.listing.id)!;
-    if (school && l.commute_min === null) {
+    if (school && l.commute_min === null && classify(l).verdict !== 'reject') {
       const { p, approx } = await listingPoint(store, l);
       if (p) store.setCommute(l.id, await driveMinutes(store, p, school), approx);
     }
