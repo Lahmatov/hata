@@ -15,6 +15,9 @@ export function sameProperty(a: Listing, b: Listing): boolean {
   if (a.lat !== null && b.lat !== null && a.lon !== null && b.lon !== null) {
     return Math.hypot((a.lat - b.lat) * 111, (a.lon - b.lon) * 85) < 0.15; // ~150 m
   }
+  // Aggregators (Trovit) give only the municipality: identical price + area within 1% in the same municipality.
+  if ((!addrA || !addrB) && norm(a.municipality) && norm(a.municipality) === norm(b.municipality)
+    && a.price === b.price && within(a.area_m2, b.area_m2, 0.01)) return true;
   // Without address/coords: same parish + near-identical numbers is a strong enough hint.
   const nA = norm(a.neighborhood);
   const nB = norm(b.neighborhood);

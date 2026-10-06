@@ -45,7 +45,9 @@ async function collect(store: Store, now: string) {
         if (page.status >= 400) throw new Error(`HTTP ${page.status} on ${url}`);
         const next = adapter.nextPageUrl?.(page.body, url, pageNo);
         if (next && pageNo < (adapter.maxPages ?? 3)) queue.push({ url: next, pageNo: pageNo + 1 });
-        const parsed = adapter.parse(page.body, url).filter((r) => inTargetArea(r.municipality, r.neighborhood, r.address));
+        const all = adapter.parse(page.body, url);
+        if (pageNo === 1 && !all.length) log.warn(`${adapter.id}: 0 listings parsed on ${url} (empty search or page layout changed)`);
+        const parsed = all.filter((r) => inTargetArea(r.municipality, r.neighborhood, r.address));
         for (let raw of parsed) {
           if (!worthEnriching(raw)) continue;
           const id = `${raw.source}:${raw.sourceId}`;

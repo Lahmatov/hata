@@ -66,3 +66,43 @@ test.describe('Idealista API adapter', () => {
     expect(ls[2]).toMatchObject({ garage: null, condition: 'needs_renovation' });
   });
 });
+
+test.describe('Casa Sapo adapter', () => {
+  test('search page: real URL from click counter, apartments only, tags, condition, geo', async () => {
+    const { casasapo } = await import('../src/adapters/casasapo.ts');
+    const ls = casasapo.parse(fx('casasapo-search.html'), '');
+    expect(ls).toHaveLength(2);
+    expect(ls[0]).toMatchObject({
+      url: 'https://casa.sapo.pt/comprar-apartamento-t3-amadora-aaaaaaaa-1111-11f1-9e61-060000000001.html',
+      sourceId: 'aaaaaaaa-1111-11f1-9e61-060000000001', price: 399000, area_m2: 112, bedrooms: 3, garage: true,
+      bathrooms: 2, elevator: true, condition: 'good', neighborhood: 'Alfragide', municipality: 'Amadora',
+      address: 'Rua das Flores', lat: 38.736, lon: -9.225,
+    });
+    expect(ls[1]).toMatchObject({ garage: null, condition: 'new', neighborhood: 'Queluz e Belas', municipality: 'Sintra' });
+  });
+  test('pagination follows pn links only while they exist', async () => {
+    const { casasapo } = await import('../src/adapters/casasapo.ts');
+    const url = 'https://casa.sapo.pt/comprar-apartamentos/t3/amadora/';
+    expect(casasapo.nextPageUrl!(fx('casasapo-search.html'), url, 1)).toBe(`${url}?pn=2`);
+    expect(casasapo.nextPageUrl!(fx('casasapo-search.html'), url, 2)).toBeNull();
+  });
+  test('detail page: labelled fields and coordinates', async () => {
+    const { parseDetail } = await import('../src/adapters/casasapo.ts');
+    const base = { bathrooms: null, garage: null, elevator: null, condition: null, lat: null, lon: null };
+    expect(parseDetail(fx('casasapo-detail.html'), base)).toMatchObject({
+      bathrooms: 2, garage: true, elevator: true, floor: '3', condition: 'good', lat: 38.7833, lon: -9.2336,
+    });
+  });
+});
+
+test.describe('Trovit adapter', () => {
+  test('snippets + JSON-LD bedrooms/bathrooms, price and area from text', async () => {
+    const { trovit } = await import('../src/adapters/trovit.ts');
+    const ls = trovit.parse(fx('trovit-search.html'), 'https://casa.trovit.pt/t3-municipio-amadora');
+    expect(ls[0]).toMatchObject({
+      source: 'trovit', sourceId: 'tv1', price: 395000, area_m2: 110, bedrooms: 3, bathrooms: 2, garage: true,
+      municipality: 'Amadora', url: 'https://casa.trovit.pt/listing/apartamento-1.html?origin=1',
+    });
+    expect(ls[1]).toMatchObject({ bedrooms: 2, bathrooms: 1 });
+  });
+});
