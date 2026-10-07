@@ -105,7 +105,7 @@ Cron задан в UTC (`35 6` и `35 7`). Скрипт сам проверяе�
 
 ### Вариант B: launchd на Mac
 ```bash
-./scripts/launchd/install.sh                          # ежедневно в 07:45 по времени Mac
+./scripts/launchd/install.sh                          # 07:45, 13:45 и 19:45 по времени Mac
 sudo pmset repeat wakeorpoweron MTWRFSU 07:40:00      # будить Mac (нужно питание для ноутбука)
 launchctl kickstart -k gui/$(id -u)/com.hata.monitor  # запустить сейчас
 ```

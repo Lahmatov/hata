@@ -111,8 +111,12 @@ async function main() {
     return;
   }
   const store = new Store();
-  if (!DRY && !SEED && !flag('force') && store.sentToday(today)) {
-    log.info(`digest for ${today} already sent; use --force to resend`);
+  // Three runs a day (07:45, 13:45, 19:45). The morning one always reports (also "nothing new" and failed
+  // sources); the others only write when there is something new.
+  const slot = hour < 11 ? 'morning' : hour < 17 ? 'day' : 'evening';
+  const runKey = `${today}-${slot}`;
+  if (!DRY && !SEED && !flag('force') && store.sentToday(runKey)) {
+    log.info(`${slot} digest for ${today} already sent; use --force to resend`);
     return;
   }
   const now = new Date().toISOString();
@@ -179,7 +183,13 @@ async function main() {
 
   const summaries = await summarize(store, items.map((i) => i.leader));
   for (const it of items) it.summary = summaries.get(it.leader.id) ?? '';
-  const messages = buildMessages(items, failed, today.split('-').reverse().join('.'), hiddenManual);
+  if (!items.length && slot !== 'morning' && !DRY && !flag('force')) {
+    store.recordRun(runKey, 0, failed);
+    log.info(`nothing new for the ${slot} digest; not sending`);
+    return;
+  }
+  const label = { morning: 'утро', day: 'день', evening: 'вечер' }[slot];
+  const messages = buildMessages(items, failed, `${today.split('-').reverse().join('.')} · ${label}`, hiddenManual);
 
   if (DRY) {
     for (const m of messages) console.log('\n' + '─'.repeat(60) + '\n' + m.replace(/<a href="([^"]+)">([^<]+)<\/a>/g, '$2: $1').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
@@ -188,7 +198,7 @@ async function main() {
   }
   for (const m of messages) await sendTelegram(m);
   for (const it of items) for (const m of it.members) store.markNotified(m.id, m.price);
-  store.recordRun(today, items.length, failed);
+  store.recordRun(runKey, items.length, failed);
   log.info(`sent ${messages.length} message(s)`);
 }
 
