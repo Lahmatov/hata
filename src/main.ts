@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { adapters } from './adapters/index.ts';
-import { config, inTargetArea } from './config.ts';
+import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
 import { classify, worthEnriching } from './filter.ts';
@@ -35,7 +35,7 @@ async function collect(store: Store, now: string) {
     try {
       if (adapter.fetchAll) {
         const got = await adapter.fetchAll({ kvGet: (k) => store.kvGet(k), kvSet: (k, v) => store.kvSet(k, v) });
-        for (const raw of got.filter((r) => worthEnriching(r) && inTargetArea(r.municipality, r.neighborhood, r.address))) {
+        for (const raw of got.filter((r) => worthEnriching(r) && (inTargetArea(r.municipality, r.neighborhood, r.address) || locationUnknown(r.municipality, r.neighborhood, r.address)))) {
           seen.push(store.upsert(raw, now));
           count++;
         }
@@ -52,7 +52,7 @@ async function collect(store: Store, now: string) {
         if (next && pageNo < (adapter.maxPages ?? 3)) queue.push({ url: next, pageNo: pageNo + 1 });
         const all = adapter.parse(page.body, url);
         if (pageNo === 1 && !all.length) log.warn(`${adapter.id}: 0 listings parsed on ${url} (empty search or page layout changed)`);
-        const parsed = all.filter((r) => inTargetArea(r.municipality, r.neighborhood, r.address));
+        const parsed = all.filter((r) => (inTargetArea(r.municipality, r.neighborhood, r.address) || locationUnknown(r.municipality, r.neighborhood, r.address)));
         for (let raw of parsed) {
           if (!worthEnriching(raw)) continue;
           const id = `${raw.source}:${raw.sourceId}`;

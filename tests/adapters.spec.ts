@@ -106,3 +106,16 @@ test.describe('Trovit adapter', () => {
     expect(ls[1]).toMatchObject({ bedrooms: 2, bathrooms: 1 });
   });
 });
+
+test.describe('E-mail alerts', () => {
+  test('finds listing links behind tracking redirects, one listing per id, with card facts', async () => {
+    const { parseAlertEmail } = await import('../src/adapters/email.ts');
+    const ls = parseAlertEmail(fx('email-alert.html'), '2026-10-07T06:00:00.000Z');
+    expect(ls).toHaveLength(2);
+    expect(ls[0]).toMatchObject({
+      source: 'idealista', sourceId: '34567890', url: 'https://www.idealista.pt/imovel/34567890/',
+      price: 410000, area_m2: 115, bedrooms: 3, bathrooms: 2, garage: true, neighborhood: 'Amadora',
+    });
+    expect(ls[1]).toMatchObject({ source: 'supercasa', sourceId: '2251299', price: 395000, area_m2: 98, bedrooms: 3, neighborhood: 'Tercena' });
+  });
+});

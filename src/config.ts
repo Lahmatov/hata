@@ -34,8 +34,15 @@ export const config = {
   // Free-flow OSRM time * factor ~ morning peak. Tune after comparing with Google Maps a few times.
   morningTrafficFactor: Number(process.env.MORNING_TRAFFIC_FACTOR ?? 1.5),
 
-  // Municipalities / parishes we search. Matching is accent- and case-insensitive.
-  areas: ['Alfragide', 'Amadora', 'Carnaxide', 'Queluz', 'Linda-a-Velha', 'Miraflores', 'Algés', 'Oeiras', 'Rio de Mouro'],
+  // Municipalities / parishes / localities we accept (accent- and case-insensitive substring match).
+  // "Amadora" and "Oeiras" cover the whole municipalities (incl. Tercena, Barcarena, Queijas, Porto Salvo).
+  // Distance is then decided by the commute filter (hardCommuteMin), not by names.
+  areas: [
+    'Amadora', 'Alfragide', 'Buraca', 'Damaia', 'Reboleira', 'Venteira', 'Brandoa', 'Falagueira', 'Mina de Agua', 'Encosta do Sol', 'Aguas Livres',
+    'Oeiras', 'Carnaxide', 'Queijas', 'Linda-a-Velha', 'Miraflores', 'Alges', 'Tercena', 'Barcarena', 'Porto Salvo',
+    'Queluz', 'Belas', 'Massama', 'Monte Abraao', 'Rio de Mouro',
+    'Benfica', 'Carnide', 'Sao Domingos de Benfica',
+  ],
 
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN ?? '',
@@ -62,6 +69,9 @@ export const norm = (s: string | null | undefined) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+
+/** No location at all (e.g. some e-mail alerts): treat as unknown, not as outside. */
+export const locationUnknown = (...parts: (string | null | undefined)[]) => !norm(parts.join(' '));
 
 export const inTargetArea = (...parts: (string | null | undefined)[]) => {
   const hay = norm(parts.join(' '));

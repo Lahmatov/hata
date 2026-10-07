@@ -1,6 +1,7 @@
 import type { Adapter } from '../types.ts';
 import { casasapo } from './casasapo.ts';
 import { custojusto } from './custojusto.ts';
+import { emailAlerts } from './email.ts';
 import { idealista } from './idealista.ts';
 import { imovirtual } from './imovirtual.ts';
 import { trovit } from './trovit.ts';
@@ -11,5 +12,5 @@ import { trovit } from './trovit.ts';
  */
 // CustoJusto: its robots.txt disallows the search pages (seen on the first real run), so it stays off.
 // Casa Sapo and Trovit answer from a home connection but block datacenter IPs (GitHub): run on the Mac.
-export const adapters: Adapter[] = [imovirtual, casasapo, trovit, idealista]; // idealista: only with an API key
+export const adapters: Adapter[] = [imovirtual, casasapo, trovit, idealista, emailAlerts]; // email: only with IMAP_* set // idealista: only with an API key
 export const disabled: Adapter[] = [custojusto];

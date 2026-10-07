@@ -20,6 +20,8 @@ export interface RawListing {
   lat: number | null;
   lon: number | null;
   description?: string | null;
+  /** When the portal says the ad was first published (ISO), if it tells us. */
+  listed_since?: string | null;
 }
 
 export interface Listing extends RawListing {

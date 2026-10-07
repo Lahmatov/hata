@@ -12,6 +12,18 @@ const CONDITION_RU: Record<string, string> = {
   new: 'новостройка', renovated: 'после ремонта', good: 'хорошее', needs_renovation: 'нужен ремонт', unknown: '?',
 };
 
+const days = (iso: string, now = Date.now()) => Math.max(0, Math.floor((now - Date.parse(iso)) / 86400_000));
+
+/** How long the flat has been on sale: portal's publish date if known, else since when our monitor sees it. */
+export function listedLine(l: Pick<Listing, 'listed_since' | 'first_seen'>, now = Date.now()): string {
+  if (l.listed_since && !Number.isNaN(Date.parse(l.listed_since))) {
+    const d = days(l.listed_since, now);
+    return `📅 в продаже ${d} дн.${d >= 90 ? ' (долго — повод торговаться)' : ''}`;
+  }
+  const d = days(l.first_seen, now);
+  return d === 0 ? '📅 в продаже: ? (у нас с сегодня)' : `📅 в продаже ≥ ${d} дн. (столько видим мы)`;
+}
+
 /** Line 1: facts only, built deterministically so numbers can never be hallucinated. */
 export function factsLine(l: Listing): string {
   const parts = [
@@ -23,6 +35,7 @@ export function factsLine(l: Listing): string {
     `этаж ${l.floor ?? '?'}, лифт: ${yn(l.elevator)}`,
     `сост.: ${CONDITION_RU[l.condition ?? 'unknown']}`,
     l.commute_min !== null ? `🚗 ${l.commute_approx ? '~' : ''}${Math.round(l.commute_min)} мин до школы` : '🚗 ?',
+    listedLine(l),
   ];
   return parts.filter(Boolean).join(' · ');
 }

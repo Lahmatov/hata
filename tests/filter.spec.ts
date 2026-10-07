@@ -30,7 +30,7 @@ test.describe('criteria filter', () => {
     expect(classify(mk({ bedrooms: 4 })).verdict).toBe('reject');
   });
   test('outside target area is rejected; accents do not matter', () => {
-    expect(classify(mk({ neighborhood: 'Benfica', municipality: 'Lisboa' })).verdict).toBe('reject');
+    expect(classify(mk({ neighborhood: 'Arroios', municipality: 'Lisboa' })).verdict).toBe('reject');
     expect(classify(mk({ neighborhood: 'Alges', municipality: 'Oeiras' })).verdict).toBe('match');
     expect(classify(mk({ neighborhood: 'Queluz e Belas', municipality: 'Sintra' })).verdict).toBe('match');
   });
@@ -49,5 +49,21 @@ test.describe('area and commute thresholds', () => {
     const { ruleBasedProsCons } = await import('../src/summarize.ts');
     expect(ruleBasedProsCons(mk({ commute_min: 19 }))).not.toContain('дорога');
     expect(ruleBasedProsCons(mk({ commute_min: 22 }))).toContain('дорога 22 мин');
+  });
+});
+
+test.describe('location and listing age', () => {
+  test('no location at all goes to manual check; Tercena and Benfica are in the area', () => {
+    expect(classify(mk({ municipality: null, neighborhood: null, address: null })).verdict).toBe('manual');
+    expect(classify(mk({ municipality: 'Oeiras', neighborhood: 'Tercena' })).verdict).toBe('match');
+    expect(classify(mk({ municipality: 'Lisboa', neighborhood: 'Benfica' })).verdict).toBe('match');
+    expect(classify(mk({ municipality: 'Lisboa', neighborhood: 'Parque das Nações' })).verdict).toBe('reject');
+  });
+  test('days on market: portal date first, else our first sighting', async () => {
+    const { listedLine } = await import('../src/summarize.ts');
+    const now = Date.parse('2026-10-07T08:00:00Z');
+    expect(listedLine({ listed_since: '2026-09-07T10:00:00Z', first_seen: '2026-10-07T07:00:00Z' }, now)).toBe('📅 в продаже 29 дн.');
+    expect(listedLine({ listed_since: '2026-06-01T00:00:00Z', first_seen: '2026-10-07T07:00:00Z' }, now)).toContain('повод торговаться');
+    expect(listedLine({ listed_since: null, first_seen: '2026-10-01T07:00:00Z' }, now)).toBe('📅 в продаже ≥ 6 дн. (столько видим мы)');
   });
 });

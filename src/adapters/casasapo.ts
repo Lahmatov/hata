@@ -3,7 +3,7 @@ import type { Adapter, Condition, Http, RawListing } from '../types.ts';
 import { bedroomsFromT, factsFromText } from './text.ts';
 
 const BASE = 'https://casa.sapo.pt';
-const AREAS = ['amadora', 'oeiras', 'sintra'];
+const AREAS = ['amadora', 'oeiras', 'sintra', 'lisboa'];
 const CONDITION: Record<string, Condition> = {
   novo: 'new', 'em construcao': 'new', 'em construção': 'new', renovado: 'renovated', remodelado: 'renovated',
   usado: 'good', 'em uso': 'good', 'para recuperar': 'needs_renovation', ruina: 'needs_renovation', 'em ruínas': 'needs_renovation',

@@ -11,11 +11,11 @@ const FLOORS: Record<string, string> = {
 const CONSTRUCTION: Record<string, Condition> = { ready_to_use: 'good', to_renovation: 'needs_renovation', to_completion: 'needs_renovation' };
 
 // Municipality-level searches (T3, ≤ 430k, newest first). Parishes are filtered later by config.areas.
-const AREAS = ['lisboa/amadora', 'lisboa/oeiras', 'lisboa/sintra'];
+const AREAS = ['lisboa/amadora', 'lisboa/oeiras', 'lisboa/sintra', 'lisboa/lisboa'];
 
 interface SearchItem {
   id: number; slug: string; title: string; estate: string; transaction: string; hidePrice: boolean;
-  totalPrice: { value: number } | null; areaInSquareMeters: number | null; roomsNumber: string | null; floorNumber: string | null;
+  totalPrice: { value: number } | null; createdAtFirst?: string | null; dateCreated?: string | null; areaInSquareMeters: number | null; roomsNumber: string | null; floorNumber: string | null;
   location?: { address?: { street?: { name?: string | null; number?: string | null } | null } | null; reverseGeocoding?: { locations?: { locationLevel: string; name: string }[] } };
 }
 
@@ -60,6 +60,7 @@ export const imovirtual: Adapter = {
           address: street?.name ? [street.name, street.number].filter(Boolean).join(' ') : null,
           lat: null,
           lon: null,
+          listed_since: i.createdAtFirst ?? i.dateCreated ?? null,
         };
       });
   },

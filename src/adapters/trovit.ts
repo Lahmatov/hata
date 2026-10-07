@@ -5,7 +5,7 @@ import { bedroomsFromT, factsFromText } from './text.ts';
 // Trovit is a public aggregator (it also indexes listings from portals we can't read directly).
 // We only read its own result pages; outgoing links are kept as-is and never followed.
 const BASE = 'https://casa.trovit.pt';
-const SEARCHES = ['/t3-municipio-amadora', '/t3-municipio-oeiras', '/t3-municipio-sintra'];
+const SEARCHES = ['/t3-municipio-amadora', '/t3-municipio-oeiras', '/t3-municipio-sintra', '/t3-benfica-lisboa'];
 
 /** Links go through a click tracker whose params change on every page view; keep the stable detail page. */
 export function stableLink(href: string): { url: string; id: string } {
@@ -69,7 +69,7 @@ export const trovit: Adapter = {
         elevator: facts.elevator,
         condition: facts.condition,
         neighborhood: place ? place.replace(/\b\w/g, (c) => c.toUpperCase()) : null,
-        municipality: /amadora/.test(pageUrl) ? 'Amadora' : /oeiras/.test(pageUrl) ? 'Oeiras' : 'Sintra',
+        municipality: /amadora/.test(pageUrl) ? 'Amadora' : /oeiras/.test(pageUrl) ? 'Oeiras' : /lisboa/.test(pageUrl) ? 'Lisboa' : 'Sintra',
         address: null,
         lat: null,
         lon: null,

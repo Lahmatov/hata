@@ -1,4 +1,4 @@
-import { config, inTargetArea } from './config.ts';
+import { config, inTargetArea, locationUnknown } from './config.ts';
 import type { Classified, Listing } from './types.ts';
 
 /**
@@ -13,7 +13,8 @@ export function classify(l: Listing): Classified {
   const reject: string[] = [];
   const unknown: string[] = [];
 
-  if (!inTargetArea(l.municipality, l.neighborhood, l.address, l.title)) reject.push('outside target area');
+  if (locationUnknown(l.municipality, l.neighborhood, l.address)) unknown.push('район');
+  else if (!inTargetArea(l.municipality, l.neighborhood, l.address, l.title)) reject.push('outside target area');
 
   if (l.bedrooms === null) unknown.push('число спален');
   else if (l.bedrooms !== c.bedrooms) reject.push(`T${l.bedrooms}`);
