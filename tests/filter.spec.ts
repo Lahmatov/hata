@@ -35,7 +35,7 @@ test.describe('criteria filter', () => {
     expect(classify(mk({ neighborhood: 'Queluz e Belas', municipality: 'Sintra' })).verdict).toBe('match');
   });
   test('commute beyond hard limit is rejected', () => {
-    expect(classify(mk({ commute_min: 40 })).verdict).toBe('reject');
+    expect(classify(mk({ commute_min: 40 })).verdict).toBe("reject");
   });
 });
 
@@ -66,4 +66,11 @@ test.describe('location and listing age', () => {
     expect(listedLine({ listed_since: '2026-06-01T00:00:00Z', first_seen: '2026-10-07T07:00:00Z' }, now)).toContain('повод торговаться');
     expect(listedLine({ listed_since: null, first_seen: '2026-10-01T07:00:00Z' }, now)).toBe('📅 в продаже ≥ 6 дн. (столько видим мы)');
   });
+});
+
+test('Sintra and Mem Martins are in the area; 30 min is allowed but flagged', async () => {
+  expect(classify(mk({ municipality: 'Sintra', neighborhood: 'Algueirão-Mem Martins', commute_min: 30 })).verdict).toBe('match');
+  expect(classify(mk({ municipality: 'Sintra', neighborhood: 'Sintra', commute_min: 34 })).verdict).toBe('match');
+  const { ruleBasedProsCons } = await import('../src/summarize.ts');
+  expect(ruleBasedProsCons(mk({ commute_min: 30 }))).toContain('дорога 30 мин');
 });

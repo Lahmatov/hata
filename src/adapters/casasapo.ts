@@ -24,7 +24,7 @@ export function realUrl(href: string): string {
 export const casasapo: Adapter = {
   id: 'casasapo',
   name: 'Casa Sapo',
-  maxPages: 8, // 25 per page
+  maxPages: 12, // 25 per page (Sintra is large)
 
   searchUrls: () => AREAS.map((a) => `${BASE}/comprar-apartamentos/t3/${a}/`),
 

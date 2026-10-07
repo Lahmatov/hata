@@ -28,7 +28,7 @@ export const config = {
     maxPrice: 415_000,
     maxPriceNegotiable: 430_000,
     preferredCommuteMin: 20,
-    hardCommuteMin: 25, // beyond this a listing is dropped
+    hardCommuteMin: 35, // beyond this a listing is dropped (Sintra / Mem Martins are ~25-35 min)
   },
 
   // Free-flow OSRM time * factor ~ morning peak. Tune after comparing with Google Maps a few times.
@@ -40,7 +40,7 @@ export const config = {
   areas: [
     'Amadora', 'Alfragide', 'Buraca', 'Damaia', 'Reboleira', 'Venteira', 'Brandoa', 'Falagueira', 'Mina de Agua', 'Encosta do Sol', 'Aguas Livres',
     'Oeiras', 'Carnaxide', 'Queijas', 'Linda-a-Velha', 'Miraflores', 'Alges', 'Tercena', 'Barcarena', 'Porto Salvo',
-    'Queluz', 'Belas', 'Massama', 'Monte Abraao', 'Rio de Mouro',
+    'Sintra', 'Queluz', 'Belas', 'Massama', 'Monte Abraao', 'Rio de Mouro', 'Mem Martins', 'Algueirao', 'Cacem', 'Agualva',
     'Benfica', 'Carnide', 'Sao Domingos de Benfica',
   ],
 
