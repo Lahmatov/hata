@@ -33,7 +33,10 @@ jobs:
         with:
           path: data/hata.sqlite
           key: hata-state-${{ github.run_id }}
-          restore-keys: hata-state-
+          # First run: start from the dry-run database (listing pages already read, nothing marked as sent).
+          restore-keys: |
+            hata-state-
+            hata-dryrun-
       - name: Run monitor
         timeout-minutes: 130 # leave time to save the state even if the first (long) run is cut off
         env:
