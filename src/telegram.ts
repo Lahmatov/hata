@@ -28,63 +28,81 @@ function renderItem(it: DigestItem, n: number): string {
 }
 
 const TITLES = { new: '🆕 НОВЫЕ', drop: '📉 СНИЖЕНИЕ ЦЕНЫ', manual: '❓ ПРОВЕРИТЬ ВРУЧНУЮ' } as const;
+const TAGS = { new: '🆕 Новая', drop: '📉 Цена снижена', manual: '❓ Проверить вручную' } as const;
 
-/** Builds Telegram HTML messages: ≤15 items and ≤4096 chars each. */
-export function buildMessages(items: DigestItem[], failed: string[], date: string, hiddenManual = 0): string[] {
-  const max = config.telegram.maxItemsPerMessage;
-  const header = `🏠 <b>Квартиры T3 · ${esc(date)}</b>`;
-  const more = hiddenManual ? `\n\n…и ещё ${hiddenManual} для ручной проверки (дальше от школы), покажу в следующие дни.` : '';
-  const footer = more + (failed.length ? `\n\n⚠️ Источники с ошибками сегодня: ${esc(failed.join(', '))}` : '\n\n✅ Все источники ответили');
-  if (!items.length) return [`${header}\nНовых объявлений и снижений цены нет.${footer}`];
-
-  const blocks: { section: string; text: string }[] = [];
-  for (const g of ['new', 'drop', 'manual'] as const) {
-    items.filter((i) => i.group === g).forEach((it, idx) => blocks.push({ section: `${TITLES[g]} (${items.filter((i) => i.group === g).length})`, text: renderItem(it, idx + 1) }));
-  }
-  const msgs: string[] = [];
-  let cur = header;
-  let count = 0;
-  let section = '';
-  for (const b of blocks) {
-    const sectionHead = b.section !== section ? `\n\n<b>${b.section}</b>` : '';
-    const add = `${sectionHead}\n\n${b.text}`;
-    if (count >= max || cur.length + add.length + footer.length > 4000) {
-      msgs.push(cur);
-      cur = `${header} (продолжение)\n\n<b>${b.section}</b>\n\n${b.text}`;
-      count = 1;
-    } else {
-      cur += add;
-      count++;
-    }
-    section = b.section;
-  }
-  msgs.push(cur);
-  msgs[msgs.length - 1] += footer;
-  return msgs.map((m, i) => (msgs.length > 1 ? m.replace(header, `${header} [${i + 1}/${msgs.length}]`) : m));
+/** One Telegram post: a photo with an HTML caption, or plain HTML text. */
+export interface Post {
+  photo?: string | null;
+  text: string;
+  item?: DigestItem; // the flat this post is about (to mark it as notified once sent)
 }
 
-export async function sendTelegram(text: string): Promise<void> {
+const CAPTION_LIMIT = 1024; // Telegram caption limit (visible characters)
+const visibleLength = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&(lt|gt|amp);/g, '_').length;
+
+/** Header post, one post per flat (with its photo when known), footer post. */
+export function buildPosts(items: DigestItem[], failed: string[], date: string, hiddenManual = 0): Post[] {
+  const header = `🏠 <b>Квартиры T3 · ${esc(date)}</b>`;
+  const more = hiddenManual ? `\n…и ещё ${hiddenManual} для ручной проверки (дальше от школы), покажу в следующие дни.` : '';
+  const sources = failed.length ? `⚠️ Источники с ошибками: ${esc(failed.join(', '))}` : '✅ Все источники ответили';
+  if (!items.length) return [{ text: `${header}\nНовых объявлений и снижений цены нет.\n\n${sources}` }];
+
+  const counts = (['new', 'drop', 'manual'] as const)
+    .map((g) => [g, items.filter((i) => i.group === g).length] as const)
+    .filter(([, n]) => n)
+    .map(([g, n]) => `${TITLES[g]}: ${n}`);
+  const posts: Post[] = [{ text: `${header}\n${counts.join(' · ')}` }];
+  for (const g of ['new', 'drop', 'manual'] as const) {
+    const group = items.filter((i) => i.group === g);
+    group.forEach((it, idx) => {
+      let text = `${TAGS[g]} ${idx + 1}/${group.length}\n${renderItem(it, idx + 1).replace(/^\d+\. /, '')}`;
+      const photo = it.members.find((m) => m.image)?.image ?? null;
+      // Captions are limited: drop the free-text summary first, then shorten the title.
+      if (photo && visibleLength(text) > CAPTION_LIMIT) text = text.replace(`\n${esc(it.summary)}`, '');
+      if (photo && visibleLength(text) > CAPTION_LIMIT) text = text.slice(0, CAPTION_LIMIT - 50);
+      posts.push({ photo, text, item: it });
+    });
+  }
+  posts.push({ text: `${sources}${more}` });
+  return posts;
+}
+
+/** Sends one post to every recipient; fails only if nobody got it. */
+export async function sendPost(post: Post): Promise<void> {
   const { token, chatIds } = config.telegram;
   if (!token || !chatIds.length) throw new Error('TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set');
   const errors: string[] = [];
   for (const chatId of chatIds) {
     try {
-      await sendTo(token, chatId, text);
+      if (post.photo) {
+        try {
+          await call(token, 'sendPhoto', { chat_id: chatId, photo: post.photo, caption: post.text, parse_mode: 'HTML' });
+        } catch {
+          // Photo URL rejected (expired, too large...): send the text alone.
+          await call(token, 'sendMessage', { chat_id: chatId, text: post.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+        }
+      } else {
+        await call(token, 'sendMessage', { chat_id: chatId, text: post.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+      }
     } catch (e) {
       errors.push(`${chatId}: ${(e as Error).message}`);
     }
   }
-  // Fail only if nobody got it; a single bad recipient must not block the others.
   if (errors.length === chatIds.length) throw new Error(errors.join('; '));
   for (const e of errors) console.error(`Telegram: ${e}`);
+  await new Promise((r) => setTimeout(r, 1100)); // stay under ~1 message/s per chat
 }
 
-async function sendTo(token: string, chatId: string, text: string): Promise<void> {
+export async function sendTelegram(text: string): Promise<void> {
+  await sendPost({ text });
+}
+
+async function call(token: string, method: string, payload: Record<string, unknown>): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt++) {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(20000),
     });
     const body = (await res.json()) as { ok: boolean; description?: string; parameters?: { retry_after?: number } };

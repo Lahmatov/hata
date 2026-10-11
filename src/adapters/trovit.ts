@@ -35,7 +35,7 @@ export const trovit: Adapter = {
   parse(body, pageUrl) {
     const $ = cheerio.load(body);
     // JSON-LD "about" lists the same 30 results in page order, with bedrooms/bathrooms.
-    const ld: { numberOfBedrooms?: number; numberOfBathroomsTotal?: number; description?: string }[] = [];
+    const ld: { numberOfBedrooms?: number; numberOfBathroomsTotal?: number; description?: string; image?: string }[] = [];
     $('script[type="application/ld+json"]').each((_, s) => {
       try {
         const j = JSON.parse($(s).text());
@@ -74,6 +74,7 @@ export const trovit: Adapter = {
         lat: null,
         lon: null,
         description: description ?? meta.description ?? null,
+        image: meta.image ?? el.find('img').first().attr('data-src') ?? el.find('img').first().attr('src') ?? null,
       };
     }).get().filter((l): l is RawListing => !!l && !/moradia|vivenda|terreno|loja/i.test(l.title));
   },

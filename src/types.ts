@@ -22,6 +22,8 @@ export interface RawListing {
   description?: string | null;
   /** When the portal says the ad was first published (ISO), if it tells us. */
   listed_since?: string | null;
+  /** One photo URL (shown in Telegram). */
+  image?: string | null;
 }
 
 export interface Listing extends RawListing {

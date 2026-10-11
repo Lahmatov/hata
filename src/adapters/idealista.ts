@@ -14,6 +14,7 @@ interface Element {
   municipality?: string; latitude?: number; longitude?: number; description?: string; suggestedTexts?: { title?: string };
   parkingSpace?: { hasParkingSpace?: boolean; isParkingSpaceIncludedInPrice?: boolean };
   propertyType?: string;
+  thumbnail?: string;
 }
 
 const STATUS: Record<string, Condition> = { good: 'good', renew: 'needs_renovation', newdevelopment: 'new' };
@@ -40,6 +41,7 @@ export function parseIdealista(json: { elementList?: Element[] }): RawListing[] 
     lat: e.latitude ?? null,
     lon: e.longitude ?? null,
     description: e.description ?? null,
+    image: e.thumbnail ?? null,
   }));
 }
 

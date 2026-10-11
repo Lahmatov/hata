@@ -12,7 +12,7 @@ export interface UpsertResult {
 
 const COLS = [
   'source', 'sourceId', 'url', 'title', 'price', 'area_m2', 'bedrooms', 'bathrooms', 'garage', 'floor', 'elevator',
-  'condition', 'neighborhood', 'municipality', 'address', 'lat', 'lon', 'description', 'listed_since',
+  'condition', 'neighborhood', 'municipality', 'address', 'lat', 'lon', 'description', 'listed_since', 'image',
 ] as const;
 
 export class Store {
@@ -31,14 +31,14 @@ export class Store {
         garage INTEGER, floor TEXT, elevator INTEGER, condition TEXT,
         neighborhood TEXT, municipality TEXT, address TEXT, lat REAL, lon REAL,
         group_id TEXT, commute_min REAL, commute_approx INTEGER DEFAULT 0,
-        first_seen TEXT, last_seen TEXT, notified_price REAL, description TEXT, detail_price REAL, listed_since TEXT
+        first_seen TEXT, last_seen TEXT, notified_price REAL, description TEXT, detail_price REAL, listed_since TEXT, image TEXT
       );
       CREATE TABLE IF NOT EXISTS price_history (id TEXT, price REAL, seen TEXT);
       CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, updated TEXT);
       CREATE TABLE IF NOT EXISTS runs (day TEXT PRIMARY KEY, sent_at TEXT, items INTEGER, failed TEXT);
     `);
     // Columns added after the first release: add them to existing databases.
-    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT']) {
+    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT']) {
       try { this.db.exec(`ALTER TABLE listings ADD COLUMN ${col}`); } catch { /* already there */ }
     }
   }

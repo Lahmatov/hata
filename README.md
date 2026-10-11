@@ -90,17 +90,23 @@ npm test                     # тесты адаптеров и логики (Pl
 
 ## Расписание
 
-### Вариант A: GitHub Actions (не зависит от Mac)
+### Вариант A: GitHub Actions (основной, не зависит от Mac)
 1. Сделайте репозиторий приватным: Settings → General → Danger Zone → Change visibility.
 2. Settings → Secrets and variables → Actions → New repository secret:
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ANTHROPIC_API_KEY` (необязательно: `GOOGLE_MAPS_API_KEY`).
 3. Влейте ветку в `main`, потому что расписание GitHub работает только из ветки по умолчанию.
 4. Actions → **daily-digest** → Run workflow с аргументом `--test-telegram`, чтобы проверить отправку.
 
-Cron задан в UTC (`35 6` и `35 7`). Скрипт сам проверяет, что в Лиссабоне 7–8 утра, и отправляет
-дайджест один раз в день, поэтому переход на летнее и зимнее время ничего не ломает. GitHub может
+Три запуска в день, примерно в 07:05, 13:05 и 19:05 по Лиссабону. Утренний приходит всегда, дневной и
+вечерний только если есть новое. Cron задан в UTC с двумя срабатываниями на слот, скрипт сам выбирает
+нужное по лиссабонскому времени, так что переход на летнее и зимнее время ничего не ломает. GitHub может
 запускать cron с опозданием на 5–30 минут. Состояние (SQLite) хранится в Actions cache.
 
+С GitHub (IP дата-центра) Casa Sapo и Trovit не отвечают, поэтому там они не опрашиваются. Работают
+Imovirtual, официальный API Idealista (с ключом) и почтовые рассылки (IMAP). Секреты для них:
+`IDEALISTA_API_KEY`, `IDEALISTA_API_SECRET`, `IMAP_USER`, `IMAP_PASSWORD`.
+
+**Прислать прямо сейчас:** Actions → daily-digest → Run workflow (аргумент по умолчанию `--force`).
 **Остановить:** Actions → daily-digest → ⋯ → Disable workflow.
 
 ### Вариант B: launchd на Mac

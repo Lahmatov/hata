@@ -12,7 +12,7 @@ test.describe('Imovirtual adapter', () => {
     expect(ls[0]).toMatchObject({
       source: 'imovirtual', sourceId: '101', price: 398600, area_m2: 110, bedrooms: 3, floor: '3',
       neighborhood: 'Alfragide', municipality: 'Amadora', address: 'Rua Elias Garcia 12',
-      url: 'https://www.imovirtual.com/pt/anuncio/apartamento-t3-com-garagem-box-ID1aaa',
+      url: 'https://www.imovirtual.com/pt/anuncio/apartamento-t3-com-garagem-box-ID1aaa', image: 'https://img.example/l.jpg',
     });
     expect(ls[1].price).toBeNull();
   });

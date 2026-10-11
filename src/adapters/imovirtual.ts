@@ -15,7 +15,8 @@ const AREAS = ['lisboa/amadora', 'lisboa/oeiras', 'lisboa/sintra', 'lisboa/lisbo
 
 interface SearchItem {
   id: number; slug: string; title: string; estate: string; transaction: string; hidePrice: boolean;
-  totalPrice: { value: number } | null; createdAtFirst?: string | null; dateCreated?: string | null; areaInSquareMeters: number | null; roomsNumber: string | null; floorNumber: string | null;
+  totalPrice: { value: number } | null; createdAtFirst?: string | null; dateCreated?: string | null;
+  images?: { small?: string; medium?: string; large?: string }[]; areaInSquareMeters: number | null; roomsNumber: string | null; floorNumber: string | null;
   location?: { address?: { street?: { name?: string | null; number?: string | null } | null } | null; reverseGeocoding?: { locations?: { locationLevel: string; name: string }[] } };
 }
 
@@ -61,6 +62,7 @@ export const imovirtual: Adapter = {
           lat: null,
           lon: null,
           listed_since: i.createdAtFirst ?? i.dateCreated ?? null,
+          image: i.images?.[0]?.large ?? i.images?.[0]?.medium ?? null,
         };
       });
   },

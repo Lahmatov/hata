@@ -8,7 +8,7 @@ import { driveMinutes, listingPoint, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
-import { buildMessages, type DigestItem, sendTelegram } from './telegram.ts';
+import { buildPosts, type DigestItem, sendPost, sendTelegram } from './telegram.ts';
 import { BlockedError, type Listing, type RawListing } from './types.ts';
 
 const args = process.argv.slice(2);
@@ -189,17 +189,21 @@ async function main() {
     return;
   }
   const label = { morning: 'утро', day: 'день', evening: 'вечер' }[slot];
-  const messages = buildMessages(items, failed, `${today.split('-').reverse().join('.')} · ${label}`, hiddenManual);
+  const posts = buildPosts(items, failed, `${today.split('-').reverse().join('.')} · ${label}`, hiddenManual);
 
   if (DRY) {
-    for (const m of messages) console.log('\n' + '─'.repeat(60) + '\n' + m.replace(/<a href="([^"]+)">([^<]+)<\/a>/g, '$2: $1').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
-    console.log('\n' + '─'.repeat(60) + `\n[dry-run] ${messages.length} message(s), nothing sent, nothing marked as notified`);
+    for (const p of posts) console.log('\n' + '─'.repeat(60) + (p.photo ? `\n[фото] ${p.photo}` : '') + '\n' + p.text.replace(/<a href="([^"]+)">([^<]+)<\/a>/g, '$2: $1').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
+    console.log('\n' + '─'.repeat(60) + `\n[dry-run] ${posts.length} post(s), nothing sent, nothing marked as notified`);
     return;
   }
-  for (const m of messages) await sendTelegram(m);
+  // Mark each flat as notified right after its post, so a crash mid-way doesn't resend the earlier ones.
+  for (const p of posts) {
+    await sendPost(p);
+    if (p.item) for (const m of p.item.members) store.markNotified(m.id, m.price);
+  }
   for (const it of items) for (const m of it.members) store.markNotified(m.id, m.price);
   store.recordRun(runKey, items.length, failed);
-  log.info(`sent ${messages.length} message(s)`);
+  log.info(`sent ${posts.length} message(s)`);
 }
 
 if (flag('telegram-chat-id')) {
@@ -215,7 +219,7 @@ if (flag('telegram-chat-id')) {
     })
     .catch((e) => { log.error(e.message); process.exit(1); });
 } else if (flag('test-telegram')) {
-  sendTelegram('✅ Хата: тестовое сообщение. Бот настроен, ежедневный дайджест придёт в 08:00 (Лиссабон).')
+  sendTelegram('✅ Хата: тестовое сообщение. Бот настроен, дайджест приходит утром, днём и вечером приходят только новые.')
     .then(() => log.info('test message sent'))
     .catch((e) => { log.error(e.message); process.exit(1); });
 } else {

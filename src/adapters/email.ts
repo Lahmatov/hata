@@ -54,6 +54,7 @@ export function parseAlertEmail(html: string, receivedAt: string | null = null):
       const prev = found.get(key);
       const title = $(a).text().replace(/\s+/g, ' ').trim();
       const facts = factsFromText(text);
+      const img = block.find('img').toArray().map((e) => $(e).attr('src') ?? '').find((u) => /^https?:\/\//.test(u) && !/logo|pixel|track|spacer/i.test(u)) ?? null;
       const prices = [...text.matchAll(/(\d{1,3}(?:[ . ]\d{3})+)\s?€/g)].map((x) => num(x[1])!).filter((p) => p > 30000);
       const area = config.areas.find((ar) => norm(text).includes(norm(ar))) ?? null;
       const listing: RawListing = {
@@ -76,6 +77,7 @@ export function parseAlertEmail(html: string, receivedAt: string | null = null):
         lon: null,
         description: `Из почтовой рассылки ${source}: ${text.slice(0, 300)}`,
         listed_since: prev?.listed_since ?? receivedAt,
+        image: prev?.image ?? img,
       };
       found.set(key, listing);
       break;

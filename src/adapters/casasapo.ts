@@ -58,6 +58,8 @@ export const casasapo: Adapter = {
       const tags = el.find('.property-features-tag span').map((_, t) => $(t).text().trim().toLowerCase()).get();
       const priceTxt = el.find('.property-price-value').text().trim();
       const description = card.find('.property-description').text().trim() || null;
+      const img = card.find('img').toArray().map((e) => $(e).attr('data-src') ?? $(e).attr('src') ?? '')
+        .find((u) => /^https?:\/\//.test(u) && !/logo|placeholder|egorealestate\.com\/150x70/i.test(u)) ?? null;
       const text = factsFromText(description);
       const parish = loc.length >= 3 ? loc[loc.length - 3] : null;
       const g = geo.get(`${priceTxt}|${parish ?? ''}`);
@@ -80,6 +82,7 @@ export const casasapo: Adapter = {
         lat: g?.lat ?? null,
         lon: g?.lon ?? null,
         description,
+        image: img,
       };
     }).get().filter((l) => /^apartamento/i.test(l.title));
   },

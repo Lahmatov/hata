@@ -11,6 +11,9 @@ import { trovit } from './trovit.ts';
  * (blocked, JS-only, or no own portal) and why they are not used.
  */
 // CustoJusto: its robots.txt disallows the search pages (seen on the first real run), so it stays off.
-// Casa Sapo and Trovit answer from a home connection but block datacenter IPs (GitHub): run on the Mac.
-export const adapters: Adapter[] = [imovirtual, casasapo, trovit, idealista, emailAlerts]; // email: only with IMAP_* set // idealista: only with an API key
+const all: Adapter[] = [imovirtual, casasapo, trovit, idealista, emailAlerts]; // idealista / email: only with keys set
+// On GitHub Actions (datacenter IPs) Casa Sapo and Trovit answer 401/429: don't knock on their door 3x a day.
+const homeOnly = new Set(['casasapo', 'trovit']);
+const onGithub = process.env.GITHUB_ACTIONS === 'true';
+export const adapters: Adapter[] = all.filter((a) => !(onGithub && homeOnly.has(a.id))); // idealista: only with an API key
 export const disabled: Adapter[] = [custojusto];
