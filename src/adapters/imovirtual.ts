@@ -64,6 +64,7 @@ export const imovirtual: Adapter = {
           lon: null,
           listed_since: i.createdAtFirst ?? i.dateCreated ?? null,
           image: i.images?.[0]?.large ?? i.images?.[0]?.medium ?? null,
+          images: photoUrls(i.images),
         };
       });
   },
@@ -74,7 +75,12 @@ export const imovirtual: Adapter = {
   },
 };
 
-/** Detail page: bathrooms, garage, lift, condition, coordinates. Exported for fixture tests. */
+const photoUrls = (imgs: { medium?: string; large?: string }[] | undefined) => {
+  const urls = (imgs ?? []).map((x) => x.large ?? x.medium).filter((u): u is string => Boolean(u));
+  return urls.length ? urls : null;
+};
+
+/** Detail page: bathrooms, garage, lift, condition, coordinates, photos. Exported for fixture tests. */
 export function parseDetail(body: string): Partial<RawListing> {
   const ad = nextData(body).props?.pageProps?.ad;
   if (!ad) return {};
@@ -96,5 +102,6 @@ export function parseDetail(body: string): Partial<RawListing> {
     lat: typeof coords?.latitude === 'number' ? coords.latitude : null,
     lon: typeof coords?.longitude === 'number' ? coords.longitude : null,
     description: description.slice(0, 1500),
+    images: photoUrls(ad.images),
   };
 }

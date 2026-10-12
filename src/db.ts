@@ -43,7 +43,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS reactions (group_id TEXT, kind TEXT, chat_id TEXT, at TEXT, PRIMARY KEY (group_id, chat_id));
     `);
     // Columns added after the first release: add them to existing databases.
-    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT']) {
+    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT', 'images TEXT']) {
       try { this.db.exec(`ALTER TABLE listings ADD COLUMN ${col}`); } catch { /* already there */ }
     }
     // One-off cleanup: the first e-mail import also took rentals, removed favourites and old alerts. Drop
@@ -85,6 +85,9 @@ export class Store {
         .run(id, ...values, id, now, now);
     }
     if (!old || priceChanged) this.db.prepare('INSERT INTO price_history VALUES (?, ?, ?)').run(id, merged.price, now);
+    // Photos: keep the longest list seen (search pages may carry fewer than the listing page).
+    const photos = raw.images?.length ? raw.images : raw.image ? [raw.image] : [];
+    if (photos.length > (old?.images?.length ?? 0)) this.db.prepare('UPDATE listings SET images = ? WHERE id = ?').run(JSON.stringify(photos), id);
     return {
       listing: this.get(id)!,
       isNew: !old,
@@ -99,6 +102,10 @@ export class Store {
 
   setCommute(id: string, minutes: number | null, approx: boolean) {
     this.db.prepare('UPDATE listings SET commute_min = ?, commute_approx = ? WHERE id = ?').run(minutes, approx ? 1 : 0, id);
+  }
+
+  imageCount(id: string): number {
+    return this.get(id)?.images?.length ?? 0;
   }
 
   /** Detail page already parsed at this price? (avoids re-fetching every day) */
@@ -196,6 +203,7 @@ function toListing(r: Record<string, unknown>): Listing {
   const area = r.area_m2 as number | null;
   return {
     ...(r as unknown as Listing),
+    images: typeof r.images === 'string' ? (JSON.parse(r.images) as string[]) : null,
     garage: toBool(r.garage),
     elevator: toBool(r.elevator),
     commute_approx: r.commute_approx === 1,

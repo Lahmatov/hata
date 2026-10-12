@@ -24,6 +24,8 @@ export interface RawListing {
   listed_since?: string | null;
   /** One photo URL (shown in Telegram). */
   image?: string | null;
+  /** All photo URLs, when the source gives them (swipe app). */
+  images?: string[] | null;
 }
 
 export interface Listing extends RawListing {
