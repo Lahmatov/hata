@@ -3,13 +3,14 @@ import worker, { type Catalogue, deck, derivedSecret, favouritesText, handleUpda
 import { createHash, createHmac } from 'node:crypto';
 
 /** In-memory stand-in for Cloudflare KV. */
-function memKV(): KV & { data: Map<string, { v: string; metadata?: unknown }> } {
+function memKV(): KV & { data: Map<string, { v: string; metadata?: unknown }>; ops: { put: number; del: number } } {
   const data = new Map<string, { v: string; metadata?: unknown }>();
+  const ops = { put: 0, del: 0 };
   return {
-    data,
+    data, ops,
     async get(k) { const e = data.get(k); return e ? JSON.parse(e.v) : null; },
-    async put(k, v, o) { data.set(k, { v, metadata: o?.metadata }); },
-    async delete(k) { data.delete(k); },
+    async put(k, v, o) { ops.put++; data.set(k, { v, metadata: o?.metadata }); },
+    async delete(k) { ops.del++; data.delete(k); },
     async list({ prefix }) {
       return { keys: [...data].filter(([k]) => k.startsWith(prefix)).map(([name, e]) => ({ name, metadata: e.metadata })), list_complete: true };
     },
@@ -24,6 +25,17 @@ test.describe('telegram worker', () => {
     await setReaction(kv, 'like', '2', 'casasapo:abc');
     const rs = (await listReactions(kv)).map((r) => [r.kind, r.chat, r.gid]).sort();
     expect(rs).toEqual([['like', '1', 'imovirtual:ID1'], ['like', '2', 'casasapo:abc']]);
+  });
+
+  test('a rejected KV write (same key within a second) is retried', async () => {
+    const kv = memKV();
+    const put = kv.put.bind(kv);
+    let fails = 1;
+    kv.put = async (k, v, o) => { if (fails-- > 0) throw new Error('KV PUT failed: 429 Too Many Requests'); return put(k, v, o); };
+    await setReaction(kv, 'like', '1', 'g1', 1);
+    expect((await listReactions(kv)).map((r) => r.kind)).toEqual(['like']);
+    fails = 5;
+    await expect(setReaction(kv, null, '1', 'g1', 1)).rejects.toThrow('429');
   });
 
   test('favourites: on sale only, closest first', () => {
@@ -151,5 +163,18 @@ test.describe('swipe app', () => {
     } finally {
       globalThis.fetch = orig;
     }
+  });
+
+  test('reactions: one write per press, no deletes; older r: keys still count; undo hides them', async () => {
+    const kv = memKV();
+    await kv.put('r:like:1:imovirtual:ID9', '1', { metadata: { at: 'old' } }); // from before this change
+    kv.ops.put = 0;
+    expect((await listReactions(kv)).map((r) => `${r.kind}:${r.chat}:${r.gid}`)).toEqual(['like:1:imovirtual:ID9']);
+    await setReaction(kv, 'hide', '1', 'imovirtual:ID9');
+    await setReaction(kv, 'super', '2', 'imovirtual:ID9');
+    expect(kv.ops).toEqual({ put: 2, del: 0 });
+    expect((await listReactions(kv)).map((r) => `${r.kind}:${r.chat}`).sort()).toEqual(['hide:1', 'super:2']);
+    await setReaction(kv, null, '1', 'imovirtual:ID9');
+    expect((await listReactions(kv)).map((r) => `${r.kind}:${r.chat}`)).toEqual(['super:2']);
   });
 });
