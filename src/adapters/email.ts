@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config, norm } from '../config.ts';
+import { EMAIL_MARK } from '../db.ts';
 import { log } from '../log.ts';
 import type { Adapter, RawListing } from '../types.ts';
 import { bedroomsFromT, factsFromText } from './text.ts';
@@ -54,6 +55,15 @@ const num = (s: string | undefined) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+/** E-mails that are not new-listing or price alerts: newsletters, removed favourites, replies, account notices. */
+export function skipEmail(from: string, subject: string): boolean {
+  return /news@|newsletter|mailing\./i.test(from)
+    || /no longer listed|já não está|deixou de estar|removed|retirad|response about|resposta|início de sessão|sign[- ]?in|login|confirmação de registo|registration/i.test(subject);
+}
+
+/** Only alerts from the last two weeks: older ones are stale (sold, withdrawn) or from old searches. */
+export const EMAIL_MAX_AGE_DAYS = 14;
+
 /** Pure parser for one alert e-mail (HTML). Exported for fixture tests. */
 export function parseAlertEmail(html: string, receivedAt: string | null = null): RawListing[] {
   const $ = cheerio.load(html);
@@ -75,6 +85,8 @@ export function parseAlertEmail(html: string, receivedAt: string | null = null):
         block = up;
       }
       const text = block.text().replace(/\s+/g, ' ').trim();
+      // Rentals ("3000 €/month", "arrendamento") are never what we look for.
+      if (/€\s*\/\s*(?:month|m[eê]s|мес)|\barrendamento\b|\/arrendar[-/]|-arrendamento-/i.test(text + ' ' + href)) break;
       const prev = found.get(key);
       const clean = (t: string) => t.replace(/\s+/g, ' ').replace(/^(?:Смотреть больше|See|Ver(?: mais)?)\s+\d+\s+\S+\s*/i, '').replace(/\s*Ref:.*$/, '').trim();
       const title = clean($(a).attr('title') || $(a).find('img').attr('title') || $(a).text());
@@ -106,7 +118,7 @@ export function parseAlertEmail(html: string, receivedAt: string | null = null):
         address: null,
         lat: null,
         lon: null,
-        description: `Из почтовой рассылки ${source}: ${text.slice(0, 300)}`,
+        description: `${EMAIL_MARK} ${source}: ${text.slice(0, 300)}`,
         listed_since: prev?.listed_since ?? receivedAt,
         image: prev?.image ?? img,
       };
@@ -137,7 +149,7 @@ export const emailAlerts: Adapter = {
     const lock = await client.getMailboxLock(process.env.IMAP_FOLDER ?? 'INBOX', { readOnly: true });
     try {
       const lastUid = kvGet<number>('email:lastUid') ?? 0;
-      const since = new Date(Date.now() - 14 * 86400_000); // first run: last two weeks
+      const since = new Date(Date.now() - EMAIL_MAX_AGE_DAYS * 86400_000); // first run: last two weeks
       const query = lastUid ? { uid: `${lastUid + 1}:*` } : { since };
       let maxUid = lastUid;
       let mails = 0;
@@ -145,6 +157,8 @@ export const emailAlerts: Adapter = {
         if (msg.uid <= lastUid || !msg.source) continue;
         maxUid = Math.max(maxUid, msg.uid);
         const parsed = await simpleParser(msg.source);
+        if (skipEmail(parsed.from?.text ?? '', parsed.subject ?? '')) continue;
+        if (parsed.date && Date.now() - parsed.date.getTime() > EMAIL_MAX_AGE_DAYS * 86400_000) continue;
         const html = typeof parsed.html === 'string' ? parsed.html : (parsed.textAsHtml ?? '');
         const got = parseAlertEmail(html, parsed.date?.toISOString() ?? null);
         mails++;

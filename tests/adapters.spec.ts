@@ -131,6 +131,18 @@ test.describe('E-mail alerts', () => {
     expect(ls[0].image).toMatch(/^https:\/\/img\d\.idealista\.pt\//);
   });
 
+  test('rentals are skipped; newsletters, removed favourites and account notices are not alerts', async () => {
+    const { parseAlertEmail, skipEmail } = await import('../src/adapters/email.ts');
+    const html = `<table><tr><td><a href="https://www.idealista.pt/en/imovel/111/">T3 flat in Odivelas</a> 3,000 €/month T3 120 m2</td></tr>
+      <tr><td><a href="https://www.idealista.pt/en/imovel/222/">T3 flat in Amadora</a> 390,000 € T3 120 m2</td></tr></table>`;
+    expect(parseAlertEmail(html).map((l) => l.sourceId)).toEqual(['222']);
+    expect(skipEmail('naoresponder@idealista.pt', 'One of your favourites is no longer listed')).toBe(true);
+    expect(skipEmail('news@semanal.idealista.com', 'Spain tops Europe')).toBe(true);
+    expect(skipEmail('naoresponder@idealista.pt', 'Novo início de sessão')).toBe(true);
+    expect(skipEmail('naoresponder@idealista.pt', 'New 3 bedroom flat (T3) in your search: Homes in several areas!')).toBe(false);
+    expect(skipEmail('naoresponder@idealista.pt', 'Price reduction in your search: Homes in several areas!')).toBe(false);
+  });
+
   test('real Supercasa alert (Russian UI, reference number right before the price)', async () => {
     const { parseAlertEmail } = await import('../src/adapters/email.ts');
     const ls = parseAlertEmail(fx('email-supercasa.html'));

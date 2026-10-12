@@ -15,6 +15,9 @@ const COLS = [
   'condition', 'neighborhood', 'municipality', 'address', 'lat', 'lon', 'description', 'listed_since', 'image',
 ] as const;
 
+/** Prefix of the description of listings that came from alert e-mails (see adapters/email.ts). */
+export const EMAIL_MARK = 'Из почтовой рассылки';
+
 export class Store {
   db: DatabaseSync;
 
@@ -41,6 +44,13 @@ export class Store {
     // Columns added after the first release: add them to existing databases.
     for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT']) {
       try { this.db.exec(`ALTER TABLE listings ADD COLUMN ${col}`); } catch { /* already there */ }
+    }
+    // One-off cleanup: the first e-mail import also took rentals, removed favourites and old alerts. Drop
+    // what came from e-mails and was not sent yet, and read the mailbox again with the stricter rules.
+    if (this.kvGet<number>('migrate:email') !== 2) {
+      this.db.exec(`DELETE FROM listings WHERE description LIKE '${EMAIL_MARK}%' AND notified_price IS NULL`);
+      this.db.exec("DELETE FROM kv WHERE k = 'email:lastUid'");
+      this.kvSet('migrate:email', 2);
     }
   }
 
@@ -115,13 +125,21 @@ export class Store {
     return new Set((this.db.prepare('SELECT DISTINCT group_id FROM reactions WHERE kind = ?').all(kind) as { group_id: string }[]).map((r) => r.group_id));
   }
 
+  /** Listings from alert e-mails that were never sent: they appear only in the run that read the e-mail. */
+  unsentFromEmail(maxAgeDays: number): Listing[] {
+    const since = new Date(Date.now() - maxAgeDays * 86400_000).toISOString();
+    return (this.db.prepare(`SELECT id FROM listings WHERE description LIKE '${EMAIL_MARK}%' AND notified_price IS NULL AND last_seen >= ?`)
+      .all(since) as { id: string }[]).map((r) => this.get(r.id)!);
+  }
+
   /** Drop cached commute times (e.g. after the school location changed). */
   resetCommutes() {
     this.db.exec('UPDATE listings SET commute_min = NULL, commute_approx = 0');
   }
 
+  /** Unknown price is stored as 0: still "notified", and never mistaken for a price drop. */
   markNotified(id: string, price: number | null) {
-    this.db.prepare('UPDATE listings SET notified_price = ? WHERE id = ?').run(price, id);
+    this.db.prepare('UPDATE listings SET notified_price = ? WHERE id = ?').run(price ?? 0, id);
   }
 
   notifiedPrice(id: string): number | null {

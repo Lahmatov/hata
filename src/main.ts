@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { adapters } from './adapters/index.ts';
+import { EMAIL_MAX_AGE_DAYS } from './adapters/email.ts';
 import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
@@ -129,6 +130,9 @@ async function main() {
   const hidden = store.reactions('hide');
   const school = await schoolPoint(store); // before collecting: the idealista API searches around it
   const { seen, failed } = await collect(store, now);
+  // E-mail listings are read once; keep the unsent ones in play for two weeks.
+  const inRun = new Set(seen.map((s) => s.listing.id));
+  for (const l of store.unsentFromEmail(EMAIL_MAX_AGE_DAYS)) if (!inRun.has(l.id)) seen.push({ listing: l, isNew: false, priceDrop: false });
 
   // Cross-portal duplicates over everything seen in the last 60 days.
   const recent = store.all().filter((l) => Date.now() - Date.parse(l.last_seen) < 60 * 86400_000);
