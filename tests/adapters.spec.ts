@@ -118,4 +118,26 @@ test.describe('E-mail alerts', () => {
     });
     expect(ls[1]).toMatchObject({ source: 'supercasa', sourceId: '2251299', price: 395000, area_m2: 98, bedrooms: 3, neighborhood: 'Tercena' });
   });
+
+  test('real Idealista alert (English, "339,000 €", card spread over several tables)', async () => {
+    const { parseAlertEmail } = await import('../src/adapters/email.ts');
+    const ls = parseAlertEmail(fx('email-idealista.html'));
+    expect(ls).toHaveLength(1);
+    expect(ls[0]).toMatchObject({
+      source: 'idealista', sourceId: '35396172', url: 'https://www.idealista.pt/en/imovel/35396172/',
+      title: 'T3 flat in Rua Dona Filipa de Lencastre Nn, Centro da Amadora, Venteira',
+      price: 339000, area_m2: 90, bedrooms: 3,
+    });
+    expect(ls[0].image).toMatch(/^https:\/\/img\d\.idealista\.pt\//);
+  });
+
+  test('real Supercasa alert (Russian UI, reference number right before the price)', async () => {
+    const { parseAlertEmail } = await import('../src/adapters/email.ts');
+    const ls = parseAlertEmail(fx('email-supercasa.html'));
+    expect(ls.map((l) => [l.sourceId, l.price, l.bedrooms])).toEqual([
+      ['1233563', 565000, 4], ['2261910', 229000, 1], ['2263762', 390000, 3], ['2300632', 677760, 4],
+    ]);
+    expect(ls[0]).toMatchObject({ title: 'Квартира 4 комнаты продажа в Rua Elias Garcia', garage: true, elevator: true, neighborhood: 'Amadora' });
+    expect(ls[2]).toMatchObject({ area_m2: 111 });
+  });
 });

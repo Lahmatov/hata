@@ -11,7 +11,7 @@ import { bedroomsFromT, factsFromText } from './text.ts';
 
 /** Listing URL patterns per portal: [source id, regex with the listing id in group 1]. */
 const PORTALS: [string, RegExp][] = [
-  ['idealista', /idealista\.pt\/(?:imovel|imoveis)\/(\d+)/],
+  ['idealista', /idealista\.pt\/(?:[a-z]{2}\/)?(?:imovel|imoveis)\/(\d+)/],
   ['imovirtual', /imovirtual\.com\/(?:pt\/)?anuncio\/[^"'\s?#]*?-(ID\w+)/],
   ['supercasa', /supercasa\.pt\/[^"'\s?#]+\/i(\d+)/],
   ['casasapo', /casa\.sapo\.pt\/[^"'\s?#]*?([0-9a-f]{8}-[0-9a-f-]{27,})\.html/],
@@ -36,6 +36,19 @@ export function unwrapUrl(href: string): string {
   return cur;
 }
 
+/** "339,000 €" / "565.000 €" / "390 000 €": a whole price, not glued to a preceding reference number. */
+const PRICE_RE = /(?<![\w.,])(\d{1,3}(?:([ .,\u00a0])\d{3})(?:\2\d{3})*)\s?€/g;
+const intOf = (s: string) => Number(s.replace(/\D/g, ''));
+
+const keyOf = (href: string): string | null => {
+  const u = unwrapUrl(href);
+  for (const [source, re] of PORTALS) {
+    const m = u.match(re);
+    if (m) return `${source}:${m[1]}`;
+  }
+  return null;
+};
+
 const num = (s: string | undefined) => {
   const n = Number((s ?? '').replace(/[^\d,]/g, '').replace(',', '.'));
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -51,28 +64,42 @@ export function parseAlertEmail(html: string, receivedAt: string | null = null):
       const m = href.match(re);
       if (!m) continue;
       const key = `${source}:${m[1]}`;
-      // The listing card: the closest ancestor whose text mentions a price.
+      // The listing card: climb to the closest ancestor whose text mentions a price, but never
+      // into a container that also holds another listing (alert e-mails list several cards).
       let block = $(a);
-      for (let i = 0; i < 6 && !/\d[\d . ]{3,}\s?€/.test(block.text()); i++) block = block.parent();
+      for (let i = 0; i < 15 && !/\d\s?€/.test(block.text()); i++) {
+        const up = block.parent();
+        if (!up.length) break;
+        const others = up.find('a[href]').toArray().some((o) => { const k = keyOf($(o).attr('href') ?? ''); return k !== null && k !== key; });
+        if (others) break;
+        block = up;
+      }
       const text = block.text().replace(/\s+/g, ' ').trim();
       const prev = found.get(key);
-      const title = $(a).text().replace(/\s+/g, ' ').trim();
+      const clean = (t: string) => t.replace(/\s+/g, ' ').replace(/^(?:Смотреть больше|See|Ver(?: mais)?)\s+\d+\s+\S+\s*/i, '').replace(/\s*Ref:.*$/, '').trim();
+      const title = clean($(a).attr('title') || $(a).find('img').attr('title') || $(a).text());
       const facts = factsFromText(text);
-      const img = block.find('img').toArray().map((e) => $(e).attr('src') ?? '').find((u) => /^https?:\/\//.test(u) && !/logo|pixel|track|spacer/i.test(u)) ?? null;
-      const prices = [...text.matchAll(/(\d{1,3}(?:[ . ]\d{3})+)\s?€/g)].map((x) => num(x[1])!).filter((p) => p > 30000);
-      const area = config.areas.find((ar) => norm(text).includes(norm(ar))) ?? null;
+      const img = block.find('img').toArray().map((e) => $(e).attr('src') ?? '').find((u) => /^https?:\/\//.test(u) && !/logo|pixel|track|spacer|badge/i.test(u)) ?? null;
+      const prices = [...text.matchAll(PRICE_RE)].map((x) => intOf(x[1])).filter((p) => p > 30000);
+      const slug = norm(href.split(/[?#]/)[0].replace(/-/g, ' '));
+      const bedrooms = bedroomsFromT(text) ?? num(href.match(/-t(\d)(?:[-/]|$)/i)?.[1])
+        ?? num(text.match(/(\d)\s*(?:quartos?|-?bedrooms?|комнат)/i)?.[1]) ?? prev?.bedrooms ?? null;
+      const garage = facts.garage ?? (/гараж|\bgarage\b/i.test(text) ? true : null);
+      const elevator = facts.elevator ?? (/лифт|\blift\b|\belevator\b/i.test(text) ? true : null);
+      const area = config.areas.find((ar) => norm(text).includes(norm(ar)))
+        ?? config.areas.find((ar) => slug.includes(norm(ar))) ?? null;
       const listing: RawListing = {
         source,
         sourceId: m[1],
         url: href.split(/[?#]/)[0],
-        title: prev?.title || title || text.slice(0, 80),
+        title: prev?.title || title || clean(text).slice(0, 80),
         price: prices[0] ?? prev?.price ?? null,
         area_m2: num(text.match(/(\d{2,4}(?:[.,]\d+)?)\s?m(?:²|2)(?!\w)/)?.[1]) ?? prev?.area_m2 ?? null,
-        bedrooms: bedroomsFromT(text) ?? num(text.match(/(\d)\s+quartos?/i)?.[1]) ?? prev?.bedrooms ?? null,
+        bedrooms,
         bathrooms: facts.bathrooms ?? prev?.bathrooms ?? null,
-        garage: facts.garage ?? prev?.garage ?? null,
+        garage: garage ?? prev?.garage ?? null,
         floor: null,
-        elevator: facts.elevator ?? prev?.elevator ?? null,
+        elevator: elevator ?? prev?.elevator ?? null,
         condition: facts.condition ?? prev?.condition ?? null,
         neighborhood: area ?? prev?.neighborhood ?? null,
         municipality: null,
