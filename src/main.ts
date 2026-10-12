@@ -8,7 +8,9 @@ import { driveMinutes, listingPoint, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
-import { buildPosts, type DigestItem, sendPost, sendTelegram } from './telegram.ts';
+import { buildPosts, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
+import { processUpdates } from './bot.ts';
+import { dealNote, historyNote, routeUrl } from './extras.ts';
 import { BlockedError, type Listing, type RawListing } from './types.ts';
 
 const args = process.argv.slice(2);
@@ -123,6 +125,8 @@ async function main() {
   log.info(`run start ${now} dry=${DRY} seed=${SEED}`);
   log.info('first run reads every listing page (6-10 s each), so it can take 20-40 min; later runs take a few minutes');
 
+  if (!DRY) await processUpdates(store).catch((e) => log.warn(`telegram updates: ${e.message}`));
+  const hidden = store.reactions('hide');
   const school = await schoolPoint(store); // before collecting: the idealista API searches around it
   const { seen, failed } = await collect(store, now);
 
@@ -152,7 +156,7 @@ async function main() {
   for (const s of seen) {
     const l = store.get(s.listing.id)!;
     const c = classify(l);
-    if (c.verdict === 'reject') continue;
+    if (c.verdict === 'reject' || hidden.has(l.group_id)) continue;
     // Links shown: same property on other portals, still seen within the last week (no dead links).
     const members = recent.map((r) => store.get(r.id)!)
       .filter((m) => m.group_id === l.group_id && Date.now() - Date.parse(m.last_seen) < 7 * 86400_000);
@@ -181,8 +185,28 @@ async function main() {
     return;
   }
 
+  // 🔥 deal vs. comparable flats, 💶 price history, 🗺 route to school.
+  // Comparable flats: T3 of the minimum size seen in the last 60 days (any of our sources).
+  const pool = recent.map((r) => store.get(r.id)!)
+    .filter((l) => l.bedrooms === config.criteria.bedrooms && (l.area_m2 ?? 0) >= config.criteria.minAreaM2 && l.id === l.group_id);
+  for (const it of items) {
+    it.deal = dealNote(it.leader, pool);
+    it.history = historyNote(store.priceHistory(it.leader.id));
+    it.route = routeUrl(it.leader, school);
+  }
+
   const summaries = await summarize(store, items.map((i) => i.leader));
   for (const it of items) it.summary = summaries.get(it.leader.id) ?? '';
+  // Sunday morning: list of flats marked 👍 that are still on sale.
+  const liked = store.reactions('like');
+  if (slot === 'morning' && new Date(`${today}T12:00:00Z`).getUTCDay() === 0 && liked.size && !DRY) {
+    const favs = recent.map((r) => store.get(r.id)!).filter((l) => liked.has(l.group_id) && l.id === l.group_id
+      && Date.now() - Date.parse(l.last_seen) < 3 * 86400_000);
+    if (favs.length) {
+      const lines = favs.map((l, i) => `${i + 1}. <a href="${esc(l.url)}">${esc([l.neighborhood, l.municipality].filter(Boolean).join(', ') || l.title)}</a> — ${l.price ? `${Math.round(l.price / 1000)} тыс. €` : 'цена ?'}${l.commute_min !== null ? ` · 🚗 ${Math.round(l.commute_min)} мин` : ''}`);
+      await sendTelegram(`⭐ <b>Избранное за неделю</b> (ещё в продаже):\n${lines.join('\n')}`);
+    }
+  }
   if (!items.length && slot !== 'morning' && !DRY && !flag('force')) {
     store.recordRun(runKey, 0, failed);
     log.info(`nothing new for the ${slot} digest; not sending`);
@@ -218,6 +242,9 @@ if (flag('telegram-chat-id')) {
       if (chats.size) console.log(`\nFor .env (everyone above): TELEGRAM_CHAT_ID=${[...chats.keys()].join(',')}`);
     })
     .catch((e) => { log.error(e.message); process.exit(1); });
+} else if (flag('process-updates')) {
+  // Light job (every 15 min on GitHub): apply 👍/👎 presses only, no scraping.
+  processUpdates(new Store()).catch((e) => { log.error(e.message); process.exit(1); });
 } else if (flag('test-telegram')) {
   sendTelegram('✅ Хата: тестовое сообщение. Бот настроен, дайджест приходит утром, днём и вечером приходят только новые.')
     .then(() => log.info('test message sent'))

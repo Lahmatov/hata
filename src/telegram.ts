@@ -1,3 +1,4 @@
+import { keyboard } from './bot.ts';
 import { config } from './config.ts';
 import { factsLine } from './summarize.ts';
 import type { Listing } from './types.ts';
@@ -9,6 +10,9 @@ export interface DigestItem {
   negotiate: boolean;
   summary: string;
   reasons: string[];
+  deal?: string | null; // 🔥 below the local median €/m²
+  history?: string | null; // 💶 price history
+  route?: string | null; // Google Maps directions to the school
 }
 
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -23,8 +27,10 @@ function renderItem(it: DigestItem, n: number): string {
     ? `\n📉 было ${fmtEur(l.prev_price)} → ${fmtEur(l.price)} (${(((l.price - l.prev_price) / l.prev_price) * 100).toFixed(1)}%)`
     : '';
   const manual = it.group === 'manual' && it.reasons.length ? `\n❓ неизвестно: ${esc(it.reasons.join(', '))}` : '';
-  const links = [...new Map(it.members.map((m) => [m.url, m])).values()].map((m) => `<a href="${esc(m.url)}">${esc(m.source)}</a>`).join(' · ');
-  return `${head}${drop}\n${esc(factsLine(l))}\n${esc(it.summary)}${manual}\n🔗 ${links}`;
+  const links = [...new Map(it.members.map((m) => [m.url, m])).values()].map((m) => `<a href="${esc(m.url)}">${esc(m.source)}</a>`);
+  if (it.route) links.push(`<a href="${esc(it.route)}">🗺 маршрут до школы</a>`);
+  const extra = [it.deal, it.history].filter(Boolean).map((x) => `\n${esc(x!)}`).join('');
+  return `${head}${drop}${extra}\n${esc(factsLine(l))}\n${esc(it.summary)}${manual}\n🔗 ${links.join(' · ')}`;
 }
 
 const TITLES = { new: '🆕 НОВЫЕ', drop: '📉 СНИЖЕНИЕ ЦЕНЫ', manual: '❓ ПРОВЕРИТЬ ВРУЧНУЮ' } as const;
@@ -72,17 +78,19 @@ export async function sendPost(post: Post): Promise<void> {
   const { token, chatIds } = config.telegram;
   if (!token || !chatIds.length) throw new Error('TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set');
   const errors: string[] = [];
+  const markup = post.item ? { reply_markup: keyboard(post.item.leader.group_id) } : {};
+  const asText = { text: post.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...markup };
   for (const chatId of chatIds) {
     try {
       if (post.photo) {
         try {
-          await call(token, 'sendPhoto', { chat_id: chatId, photo: post.photo, caption: post.text, parse_mode: 'HTML' });
+          await call(token, 'sendPhoto', { chat_id: chatId, photo: post.photo, caption: post.text, parse_mode: 'HTML', ...markup });
         } catch {
           // Photo URL rejected (expired, too large...): send the text alone.
-          await call(token, 'sendMessage', { chat_id: chatId, text: post.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+          await call(token, 'sendMessage', { chat_id: chatId, ...asText });
         }
       } else {
-        await call(token, 'sendMessage', { chat_id: chatId, text: post.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+        await call(token, 'sendMessage', { chat_id: chatId, ...asText });
       }
     } catch (e) {
       errors.push(`${chatId}: ${(e as Error).message}`);

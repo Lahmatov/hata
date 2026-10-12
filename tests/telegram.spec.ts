@@ -23,6 +23,14 @@ test.describe('telegram digest', () => {
     expect(posts[3].text).toContain('неизвестно: гараж');
     expect(posts[4].text).toContain('Все источники ответили');
   });
+  test('deal, history and route lines are shown in the card', () => {
+    const it = item(1);
+    Object.assign(it, { deal: '🔥 на 20% дешевле среднего по Alfragide', history: '💶 история цены: 440 → 415 тыс.', route: 'https://www.google.com/maps/dir/?api=1&origin=1%2C2' });
+    const [, post] = buildPosts([it], [], 'd');
+    expect(post.text).toContain('🔥 на 20% дешевле');
+    expect(post.text).toContain('💶 история цены: 440 → 415 тыс.');
+    expect(post.text).toContain('<a href="https://www.google.com/maps/dir/?api=1&amp;origin=1%2C2">🗺 маршрут до школы</a>');
+  });
   test('captions stay within the Telegram limit', () => {
     const it = item(1);
     it.summary = 'x'.repeat(2000);

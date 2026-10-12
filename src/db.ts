@@ -36,6 +36,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS price_history (id TEXT, price REAL, seen TEXT);
       CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, updated TEXT);
       CREATE TABLE IF NOT EXISTS runs (day TEXT PRIMARY KEY, sent_at TEXT, items INTEGER, failed TEXT);
+      CREATE TABLE IF NOT EXISTS reactions (group_id TEXT, kind TEXT, chat_id TEXT, at TEXT, PRIMARY KEY (group_id, chat_id));
     `);
     // Columns added after the first release: add them to existing databases.
     for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT']) {
@@ -97,6 +98,21 @@ export class Store {
 
   markDetail(id: string, price: number | null) {
     this.db.prepare('UPDATE listings SET detail_price = ? WHERE id = ?').run(price, id);
+  }
+
+  /** Distinct prices over time for one listing, oldest first. */
+  priceHistory(id: string): number[] {
+    const rows = this.db.prepare('SELECT price FROM price_history WHERE id = ? ORDER BY seen').all(id) as { price: number | null }[];
+    return rows.map((r) => r.price).filter((p): p is number => p !== null).filter((p, i, a) => i === 0 || p !== a[i - 1]);
+  }
+
+  /** 👍 / 👎 from Telegram buttons, one per person per flat (the latest wins). */
+  setReaction(groupId: string, kind: 'like' | 'hide', chatId: string) {
+    this.db.prepare('INSERT OR REPLACE INTO reactions VALUES (?, ?, ?, ?)').run(groupId, kind, chatId, new Date().toISOString());
+  }
+
+  reactions(kind: 'like' | 'hide'): Set<string> {
+    return new Set((this.db.prepare('SELECT DISTINCT group_id FROM reactions WHERE kind = ?').all(kind) as { group_id: string }[]).map((r) => r.group_id));
   }
 
   /** Drop cached commute times (e.g. after the school location changed). */
