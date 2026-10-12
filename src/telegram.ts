@@ -118,18 +118,21 @@ export async function sendTelegram(text: string): Promise<void> {
  */
 export async function clearChats(): Promise<void> {
   const { token, chatIds } = config.telegram;
-  for (const chatId of chatIds) {
-    const marker = await call(token, 'sendMessage', { chat_id: chatId, text: '🧹 Чищу историю…' });
-    const top = marker?.message_id ?? 0;
-    let batches = 0;
-    for (let from = 1; from <= top; from += 100) {
-      const ids = Array.from({ length: Math.min(100, top - from + 1) }, (_, i) => from + i);
-      // Missing or too old ids are skipped by Telegram; a batch with none deletable is an error we ignore.
-      await call(token, 'deleteMessages', { chat_id: chatId, message_ids: ids }).catch(() => undefined);
-      batches++;
-      await new Promise((r) => setTimeout(r, 300));
+  for (const [n, chatId] of chatIds.entries()) {
+    // One recipient failing (e.g. blocked the bot) must not stop the others.
+    try {
+      const marker = await call(token, 'sendMessage', { chat_id: chatId, text: '🧹 Чищу историю…' });
+      const top = marker?.message_id ?? 0;
+      for (let from = 1; from <= top; from += 100) {
+        const ids = Array.from({ length: Math.min(100, top - from + 1) }, (_, i) => from + i);
+        // Missing or too old ids are skipped by Telegram; a batch with none deletable is an error we ignore.
+        await call(token, 'deleteMessages', { chat_id: chatId, message_ids: ids }).catch(() => undefined);
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      log.info(`telegram: chat ${n + 1}/${chatIds.length} cleared up to message ${top}`);
+    } catch (e) {
+      log.warn(`telegram: chat ${n + 1}/${chatIds.length} not cleared: ${(e as Error).message}`);
     }
-    log.info(`telegram: chat ${chatIds.indexOf(chatId) + 1}/${chatIds.length} cleared up to message ${top} (${batches} batch(es))`);
   }
 }
 
