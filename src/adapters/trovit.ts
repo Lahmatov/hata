@@ -70,7 +70,7 @@ export const trovit: Adapter = {
         elevator: facts.elevator,
         condition: facts.condition,
         neighborhood: place ? place.replace(/\b\w/g, (c) => c.toUpperCase()) : null,
-        municipality: /amadora/.test(pageUrl) ? 'Amadora' : /oeiras/.test(pageUrl) ? 'Oeiras' : /odivelas/.test(pageUrl) ? 'Odivelas' : /lisboa/.test(pageUrl) ? 'Lisboa' : 'Sintra',
+        municipality: /amadora/.test(pageUrl) ? 'Amadora' : /oeiras/.test(pageUrl) ? 'Oeiras' : /odivelas/.test(pageUrl) ? 'Odivelas' : /lisboa/.test(pageUrl) ? 'Lisboa' : /sintra/.test(pageUrl) ? 'Sintra' : null,
         address: null,
         lat: null,
         lon: null,
