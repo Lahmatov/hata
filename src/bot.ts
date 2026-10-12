@@ -108,7 +108,16 @@ export async function processUpdates(store: Store): Promise<number> {
     n++;
     // Late answers are fine to try: they fail silently if the press is too old.
     await api('answerCallbackQuery', { callback_query_id: q.id, text: kind === 'like' ? 'Отмечено 👍' : 'Больше не покажу' });
-    if (q.message) {
+    if (kind === 'hide') {
+      // 👎 removes the flat from every recipient's chat (posts we know of, plus the one pressed).
+      const posts = store.messages(m[2]);
+      if (q.message) posts.push({ chatId: String(q.message.chat.id), messageId: q.message.message_id });
+      for (const p of new Map(posts.map((x) => [`${x.chatId}:${x.messageId}`, x])).values()) {
+        const gone = await api<boolean>('deleteMessage', { chat_id: p.chatId, message_id: p.messageId });
+        // Telegram refuses to delete some old messages: then at least show it as hidden.
+        if (!gone) await api('editMessageReplyMarkup', { chat_id: p.chatId, message_id: p.messageId, reply_markup: keyboard(m[2], kind) });
+      }
+    } else if (q.message) {
       await api('editMessageReplyMarkup', { chat_id: q.message.chat.id, message_id: q.message.message_id, reply_markup: keyboard(m[2], kind) });
     }
   }
