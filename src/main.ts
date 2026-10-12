@@ -36,8 +36,9 @@ async function collect(store: Store, now: string) {
     const http = new PoliteHttp(adapter.id, { useCache: !flag('no-cache') });
     let count = 0;
     let details = 0;
-    // Listings read before photos were stored have one photo: re-read a few pages per run for the swipe app.
-    let photoBackfill = Number(process.env.PHOTO_BACKFILL ?? 150);
+    // Search pages carry ~3 photos, the listing page all of them: listings read before photos were stored
+    // are re-read, a limited number per run (--photo-backfill=N for a one-off catch-up run).
+    let photoBackfill = Number(opt('photo-backfill') ?? process.env.PHOTO_BACKFILL ?? 150);
     try {
       if (adapter.fetchAll) {
         const got = await adapter.fetchAll({ kvGet: (k) => store.kvGet(k), kvSet: (k, v) => store.kvSet(k, v) });
@@ -62,8 +63,7 @@ async function collect(store: Store, now: string) {
         for (let raw of parsed) {
           if (!worthEnriching(raw)) continue;
           const id = `${raw.source}:${raw.sourceId}`;
-          const needsDetail = adapter.enrich && (!store.detailDone(id, raw.price)
-            || ((raw.images?.length ?? 0) <= 1 && store.imageCount(id) <= 1 && photoBackfill-- > 0));
+          const needsDetail = adapter.enrich && (!store.detailDone(id, raw.price) || (!store.photosDone(id) && photoBackfill-- > 0));
           let detailed = false;
           if (needsDetail) {
             try {

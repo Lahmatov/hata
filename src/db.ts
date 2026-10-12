@@ -46,7 +46,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS reactions (group_id TEXT, kind TEXT, chat_id TEXT, at TEXT, PRIMARY KEY (group_id, chat_id));
     `);
     // Columns added after the first release: add them to existing databases.
-    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT', 'images TEXT']) {
+    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT', 'images TEXT', 'photos_done INTEGER']) {
       try { this.db.exec(`ALTER TABLE listings ADD COLUMN ${col}`); } catch { /* already there */ }
     }
     // One-off cleanup: the first e-mail import also took rentals, removed favourites and old alerts. Drop
@@ -107,8 +107,10 @@ export class Store {
     this.db.prepare('UPDATE listings SET commute_min = ?, commute_approx = ? WHERE id = ?').run(minutes, approx ? 1 : 0, id);
   }
 
-  imageCount(id: string): number {
-    return this.get(id)?.images?.length ?? 0;
+  /** Has the listing page (with the full photo set) been read since photos are stored? */
+  photosDone(id: string): boolean {
+    const r = this.db.prepare('SELECT photos_done FROM listings WHERE id = ?').get(id) as { photos_done: number | null } | undefined;
+    return r?.photos_done === 1;
   }
 
   /** Detail page already parsed at this price? (avoids re-fetching every day) */
@@ -118,7 +120,7 @@ export class Store {
   }
 
   markDetail(id: string, price: number | null) {
-    this.db.prepare('UPDATE listings SET detail_price = ? WHERE id = ?').run(price, id);
+    this.db.prepare('UPDATE listings SET detail_price = ?, photos_done = 1 WHERE id = ?').run(price, id);
   }
 
   /** Distinct prices over time for one listing, oldest first. */
