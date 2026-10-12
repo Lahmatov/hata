@@ -33,4 +33,15 @@ test.describe('favourites on demand', () => {
   test('nothing liked: null', () => {
     expect(favouritesText(new Store(':memory:'))).toBeNull();
   });
+
+  test('a flat sent with unknown price counts as sent; unsent e-mail listings stay available', () => {
+    const store = new Store(':memory:');
+    const now = new Date().toISOString();
+    store.upsert(raw('IDx', { source: 'idealista', price: null, description: 'Из почтовой рассылки idealista: …' }), now);
+    store.upsert(raw('IDy', { source: 'idealista', description: 'Из почтовой рассылки idealista: …' }), now);
+    expect(store.unsentFromEmail(14).map((l) => l.id).sort()).toEqual(['idealista:IDx', 'idealista:IDy']);
+    store.markNotified('idealista:IDx', null);
+    expect(store.notifiedPrice('idealista:IDx')).not.toBeNull();
+    expect(store.unsentFromEmail(14).map((l) => l.id)).toEqual(['idealista:IDy']);
+  });
 });
