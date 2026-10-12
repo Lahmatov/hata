@@ -44,4 +44,29 @@ test.describe('favourites on demand', () => {
     expect(store.notifiedPrice('idealista:IDx')).not.toBeNull();
     expect(store.unsentFromEmail(14).map((l) => l.id)).toEqual(['idealista:IDy']);
   });
+
+  test('flats seen only in old alert e-mails expire with their posts; fresh ones and cross-portal groups stay', () => {
+    const store = new Store(':memory:');
+    const now = new Date().toISOString();
+    const old = new Date(Date.now() - 30 * 86400_000).toISOString();
+    const mail = (id: string, emailed: string) => store.upsert(raw(id, { source: 'idealista', description: 'Из почтовой рассылки idealista: …', emailed_at: emailed, listed_since: emailed }), now);
+    mail('OLD', old);
+    mail('FRESH', now);
+    mail('DUP', old);
+    store.upsert(raw('IMO'), now);
+    store.setGroup('imovirtual:IMO', 'idealista:DUP');
+    store.saveMessages('idealista:OLD', [{ chatId: '1', messageId: 10 }, { chatId: '2', messageId: 20 }]);
+
+    const r = store.expireEmailOnly(14);
+    expect(r.groups).toBe(1);
+    expect(r.posts).toEqual([{ chatId: '1', messageId: 10 }, { chatId: '2', messageId: 20 }]);
+    expect(store.get('idealista:OLD')).toBeUndefined();
+    expect(store.get('idealista:FRESH')).toBeDefined();
+    expect(store.get('idealista:DUP')).toBeDefined();
+    expect(store.messages('idealista:OLD')).toEqual([]);
+
+    // A newer e-mail about the same flat keeps it alive (newest date wins).
+    mail('FRESH', old);
+    expect(store.expireEmailOnly(14).groups).toBe(0);
+  });
 });

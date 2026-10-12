@@ -149,6 +149,16 @@ export async function clearChats(pauseMs = 300): Promise<number> {
   return cleared;
 }
 
+/** Deletes posts (best effort: Telegram refuses messages older than 48 hours). Returns how many went. */
+export async function deletePosts(posts: { chatId: string; messageId: number }[]): Promise<number> {
+  let n = 0;
+  for (const p of posts) {
+    try { await call(config.telegram.token, 'deleteMessage', { chat_id: p.chatId, message_id: p.messageId }); n++; } catch { /* gone or too old */ }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return n;
+}
+
 async function call(token: string, method: string, payload: Record<string, unknown>): Promise<{ message_id?: number } | undefined> {
   for (let attempt = 0; attempt < 4; attempt++) {
     const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {

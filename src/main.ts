@@ -9,7 +9,7 @@ import { driveMinutes, listingPoint, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
-import { buildPosts, clearChats, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
+import { buildPosts, clearChats, deletePosts, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
 import { favouritesText, processUpdates } from './bot.ts';
 import { pushCatalogue, workerEnabled } from './worker-sync.ts';
 import { dealNote, historyNote, routeUrl } from './extras.ts';
@@ -134,6 +134,12 @@ async function main() {
   const hidden = store.reactions('hide');
   const school = await schoolPoint(store); // before collecting: the idealista API searches around it
   const { seen, failed } = await collect(store, now);
+  // Flats seen only in old alert e-mails are probably gone: drop them and their posts.
+  const expired = store.expireEmailOnly(EMAIL_MAX_AGE_DAYS);
+  if (expired.groups) {
+    const gone = DRY ? 0 : await deletePosts(expired.posts);
+    log.info(`email: ${expired.groups} flat(s) not in any e-mail for ${EMAIL_MAX_AGE_DAYS} days removed, ${gone}/${expired.posts.length} post(s) deleted`);
+  }
   // E-mail listings are read once; keep the unsent ones in play for two weeks.
   const inRun = new Set(seen.map((s) => s.listing.id));
   for (const l of store.unsentFromEmail(EMAIL_MAX_AGE_DAYS)) if (!inRun.has(l.id)) seen.push({ listing: l, isNew: false, priceDrop: false });

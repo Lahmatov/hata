@@ -46,7 +46,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS reactions (group_id TEXT, kind TEXT, chat_id TEXT, at TEXT, PRIMARY KEY (group_id, chat_id));
     `);
     // Columns added after the first release: add them to existing databases.
-    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT', 'images TEXT', 'photos_done INTEGER']) {
+    for (const col of ['description TEXT', 'detail_price REAL', 'listed_since TEXT', 'image TEXT', 'images TEXT', 'photos_done INTEGER', 'emailed_at TEXT']) {
       try { this.db.exec(`ALTER TABLE listings ADD COLUMN ${col}`); } catch { /* already there */ }
     }
     // One-off cleanup: the first e-mail import also took rentals, removed favourites and old alerts. Drop
@@ -88,6 +88,8 @@ export class Store {
         .run(id, ...values, id, now, now);
     }
     if (!old || priceChanged) this.db.prepare('INSERT INTO price_history VALUES (?, ?, ?)').run(id, merged.price, now);
+    // Alert e-mails: remember the newest e-mail date (older rows fall back to the first one, listed_since).
+    if (raw.emailed_at) this.db.prepare('UPDATE listings SET emailed_at = MAX(COALESCE(emailed_at, \'\'), ?) WHERE id = ?').run(raw.emailed_at, id);
     // Photos: keep the longest list seen (search pages may carry fewer than the listing page).
     const photos = raw.images?.length ? raw.images : raw.image ? [raw.image] : [];
     if (photos.length > (old?.images?.length ?? 0)) this.db.prepare('UPDATE listings SET images = ? WHERE id = ?').run(JSON.stringify(photos), id);
@@ -146,8 +148,31 @@ export class Store {
   /** Listings from alert e-mails that were never sent: they appear only in the run that read the e-mail. */
   unsentFromEmail(maxAgeDays: number): Listing[] {
     const since = new Date(Date.now() - maxAgeDays * 86400_000).toISOString();
-    return (this.db.prepare(`SELECT id FROM listings WHERE description LIKE '${EMAIL_MARK}%' AND notified_price IS NULL AND last_seen >= ?`)
+    return (this.db.prepare(`SELECT id FROM listings WHERE description LIKE '${EMAIL_MARK}%' AND notified_price IS NULL
+        AND COALESCE(emailed_at, listed_since, last_seen) >= ?`)
       .all(since) as { id: string }[]).map((r) => this.get(r.id)!);
+  }
+
+  /**
+   * Flats known only from alert e-mails that no e-mail mentioned for maxAgeDays: most likely sold or withdrawn
+   * (we never read Idealista/Supercasa pages to check). A group with any other fresh member is kept.
+   * Removes them and returns their Telegram posts so the caller can delete those too.
+   */
+  expireEmailOnly(maxAgeDays: number): { groups: number; posts: { chatId: string; messageId: number }[] } {
+    const since = new Date(Date.now() - maxAgeDays * 86400_000).toISOString();
+    const stale = (l: Listing) => l.description?.startsWith(EMAIL_MARK) && (l.emailed_at ?? l.listed_since ?? l.last_seen) < since;
+    const byGroup = new Map<string, Listing[]>();
+    for (const l of this.all()) byGroup.set(l.group_id, [...(byGroup.get(l.group_id) ?? []), l]);
+    const posts: { chatId: string; messageId: number }[] = [];
+    let groups = 0;
+    for (const [gid, members] of byGroup) {
+      if (!members.every(stale)) continue;
+      posts.push(...this.messages(gid));
+      for (const m of members) this.db.prepare('DELETE FROM listings WHERE id = ?').run(m.id);
+      this.db.prepare('DELETE FROM messages WHERE group_id = ?').run(gid);
+      groups++;
+    }
+    return { groups, posts };
   }
 
   /** Telegram posts about a flat, so 👎 can remove them from every recipient's chat. */
@@ -208,6 +233,7 @@ function toListing(r: Record<string, unknown>): Listing {
   const area = r.area_m2 as number | null;
   return {
     ...(r as unknown as Listing),
+    emailed_at: (r.emailed_at as string | null) ?? null,
     images: typeof r.images === 'string' ? (JSON.parse(r.images) as string[]) : null,
     garage: toBool(r.garage),
     elevator: toBool(r.elevator),
