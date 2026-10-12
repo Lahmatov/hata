@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Telegram crops the avatar to a circle: keep everything within ~200 px of the centre. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F80ED"/>
+      <stop offset="1" stop-color="#1B4FA8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g transform="translate(0 6)">
+    <rect x="322" y="142" width="32" height="64" rx="4" fill="#FFFFFF"/>
+    <!-- roof and walls as one shape -->
+    <path d="M256 112 L412 242 Q420 250 408 250 L370 250 L370 376 Q370 388 358 388 L154 388 Q142 388 142 376 L142 250 L104 250 Q92 250 100 242 Z" fill="#FFFFFF"/>
+    <rect x="228" y="300" width="56" height="88" rx="8" fill="#F2994A"/>
+    <rect x="170" y="262" width="44" height="44" rx="6" fill="#56CCF2"/>
+    <rect x="298" y="262" width="44" height="44" rx="6" fill="#56CCF2"/>
+  </g>
+  <!-- map pin badge -->
+  <g transform="translate(386 364) scale(0.88)">
+    <circle r="50" fill="#EB5757" stroke="#FFFFFF" stroke-width="8"/>
+    <path d="M0 30 C-6 18 -20 6 -20 -6 A20 20 0 1 1 20 -6 C20 6 6 18 0 30 Z" fill="#FFFFFF"/>
+    <circle cy="-6" r="7" fill="#EB5757"/>
+  </g>
+</svg>
