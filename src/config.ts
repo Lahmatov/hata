@@ -49,7 +49,9 @@ export const config = {
     token: process.env.TELEGRAM_BOT_TOKEN ?? '',
     // One or more recipients, comma-separated (each person must press Start in the bot first).
     // Any separator works: "1,2", "1, 2", "1 2", "1;2" or one per line.
-    chatIds: (process.env.TELEGRAM_CHAT_ID ?? '').split(/[^-\w@]+/).filter(Boolean),
+    // Words ("Id:") and the bot's own id (the token prefix: a bot can't message itself) are ignored.
+    chatIds: (process.env.TELEGRAM_CHAT_ID ?? '').split(/[^-\w@]+/)
+      .filter((s) => /^(-?\d+|@\w+)$/.test(s) && s !== (process.env.TELEGRAM_BOT_TOKEN ?? '').split(':')[0]),
     maxItemsPerMessage: 15,
     maxManualItems: Number(process.env.MAX_MANUAL_ITEMS ?? Infinity), // "check manually": all by default
   },
