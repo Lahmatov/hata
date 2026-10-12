@@ -154,6 +154,11 @@ export class Store {
     this.db.exec('UPDATE listings SET commute_min = NULL, commute_approx = 0');
   }
 
+  /** Fresh start in Telegram: everything counts as not sent yet (👍/👎 are kept). */
+  resetNotified() {
+    this.db.exec('UPDATE listings SET notified_price = NULL; DELETE FROM messages;');
+  }
+
   /** Unknown price is stored as 0: still "notified", and never mistaken for a price drop. */
   markNotified(id: string, price: number | null) {
     this.db.prepare('UPDATE listings SET notified_price = ? WHERE id = ?').run(price ?? 0, id);

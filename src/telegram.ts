@@ -1,4 +1,5 @@
 import { keyboard } from './bot.ts';
+import { log } from './log.ts';
 import { config } from './config.ts';
 import { factsLine } from './summarize.ts';
 import type { Listing } from './types.ts';
@@ -108,6 +109,28 @@ export async function sendPost(post: Post): Promise<{ chatId: string; messageId:
 
 export async function sendTelegram(text: string): Promise<void> {
   await sendPost({ text });
+}
+
+/**
+ * Deletes the whole chat history with the bot for every recipient: message ids in a private chat are
+ * sequential, so a fresh marker message gives the upper bound. Telegram only lets bots delete messages
+ * younger than 48 hours; older ones stay.
+ */
+export async function clearChats(): Promise<void> {
+  const { token, chatIds } = config.telegram;
+  for (const chatId of chatIds) {
+    const marker = await call(token, 'sendMessage', { chat_id: chatId, text: '🧹 Чищу историю…' });
+    const top = marker?.message_id ?? 0;
+    let batches = 0;
+    for (let from = 1; from <= top; from += 100) {
+      const ids = Array.from({ length: Math.min(100, top - from + 1) }, (_, i) => from + i);
+      // Missing or too old ids are skipped by Telegram; a batch with none deletable is an error we ignore.
+      await call(token, 'deleteMessages', { chat_id: chatId, message_ids: ids }).catch(() => undefined);
+      batches++;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    log.info(`telegram: chat ${chatIds.indexOf(chatId) + 1}/${chatIds.length} cleared up to message ${top} (${batches} batch(es))`);
+  }
 }
 
 async function call(token: string, method: string, payload: Record<string, unknown>): Promise<{ message_id?: number } | undefined> {

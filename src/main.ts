@@ -9,7 +9,7 @@ import { driveMinutes, listingPoint, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
-import { buildPosts, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
+import { buildPosts, clearChats, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
 import { favouritesText, processUpdates } from './bot.ts';
 import { pushCatalogue, workerEnabled } from './worker-sync.ts';
 import { dealNote, historyNote, routeUrl } from './extras.ts';
@@ -253,6 +253,12 @@ if (flag('telegram-chat-id')) {
 } else if (flag('process-updates')) {
   // Light job (every 15 min on GitHub): apply 👍/👎 presses only, no scraping.
   processUpdates(new Store()).catch((e) => { log.error(e.message); process.exit(1); });
+} else if (flag('clear-chat')) {
+  // Deletes the bot's chat history for all recipients and marks every flat as not sent, so the next
+  // digest (--force) starts from a clean chat with the full current list.
+  clearChats()
+    .then(() => { new Store().resetNotified(); log.info('chat cleared; all flats will be sent again by the next digest'); })
+    .catch((e) => { log.error(e.message); process.exit(1); });
 } else if (flag('test-telegram')) {
   sendTelegram('✅ Хата: тестовое сообщение. Бот настроен, дайджест приходит утром, днём и вечером приходят только новые.')
     .then(() => log.info('test message sent'))
