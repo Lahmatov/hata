@@ -9,7 +9,7 @@ import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
 import { buildPosts, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
-import { processUpdates } from './bot.ts';
+import { favouritesText, processUpdates } from './bot.ts';
 import { dealNote, historyNote, routeUrl } from './extras.ts';
 import { BlockedError, type Listing, type RawListing } from './types.ts';
 
@@ -173,7 +173,7 @@ async function main() {
   const sorted = [...byGroup.values()].sort(
     (a, b) => (a.leader.commute_min ?? 99) - (b.leader.commute_min ?? 99) || (a.leader.price ?? 0) - (b.leader.price ?? 0),
   );
-  // "Check manually" is capped (closest first); the rest stay un-notified and can surface on later days.
+  // "Check manually" can be capped (closest first); the rest stay un-notified and surface on later runs.
   const manual = sorted.filter((i) => i.group === 'manual');
   const items = [...sorted.filter((i) => i.group !== 'manual'), ...manual.slice(0, config.telegram.maxManualItems)];
   const hiddenManual = Math.max(0, manual.length - config.telegram.maxManualItems);
@@ -198,14 +198,9 @@ async function main() {
   const summaries = await summarize(store, items.map((i) => i.leader));
   for (const it of items) it.summary = summaries.get(it.leader.id) ?? '';
   // Sunday morning: list of flats marked 👍 that are still on sale.
-  const liked = store.reactions('like');
-  if (slot === 'morning' && new Date(`${today}T12:00:00Z`).getUTCDay() === 0 && liked.size && !DRY) {
-    const favs = recent.map((r) => store.get(r.id)!).filter((l) => liked.has(l.group_id) && l.id === l.group_id
-      && Date.now() - Date.parse(l.last_seen) < 3 * 86400_000);
-    if (favs.length) {
-      const lines = favs.map((l, i) => `${i + 1}. <a href="${esc(l.url)}">${esc([l.neighborhood, l.municipality].filter(Boolean).join(', ') || l.title)}</a> — ${l.price ? `${Math.round(l.price / 1000)} тыс. €` : 'цена ?'}${l.commute_min !== null ? ` · 🚗 ${Math.round(l.commute_min)} мин` : ''}`);
-      await sendTelegram(`⭐ <b>Избранное за неделю</b> (ещё в продаже):\n${lines.join('\n')}`);
-    }
+  if (slot === 'morning' && new Date(`${today}T12:00:00Z`).getUTCDay() === 0 && !DRY) {
+    const text = favouritesText(store, 'Избранное за неделю');
+    if (text) await sendTelegram(text);
   }
   if (!items.length && slot !== 'morning' && !DRY && !flag('force')) {
     store.recordRun(runKey, 0, failed);

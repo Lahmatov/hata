@@ -50,7 +50,7 @@ export const config = {
     // One or more recipients, comma-separated (each person must press Start in the bot first).
     chatIds: (process.env.TELEGRAM_CHAT_ID ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     maxItemsPerMessage: 15,
-    maxManualItems: 15, // "check manually" can be large; show the closest ones only
+    maxManualItems: Number(process.env.MAX_MANUAL_ITEMS ?? Infinity), // "check manually": all by default
   },
 
   anthropic: {
