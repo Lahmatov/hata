@@ -63,7 +63,7 @@ test.describe('rating and favourites table', () => {
   test('a table row has a cell for every column, with links and the price history', () => {
     const l = mk({ price: 395000, description: 'Com terraço e lareira.', listed_since: '2026-09-01T00:00:00Z' });
     const other = mk({ group_id: l.group_id, source: 'idealista', url: 'https://www.idealista.pt/imovel/1/' });
-    const row = tableRow(l, classify(l), score(l, []), { pool: [], members: [l, other], prices: [420000, 395000], school: { lat: 38.7, lon: -9.2 }, now: Date.parse('2026-10-11T00:00:00Z') });
+    const row = tableRow(l, classify(l), score(l, []), { members: [l, other], prices: [420000, 395000], school: { lat: 38.7, lon: -9.2 }, now: Date.parse('2026-10-11T00:00:00Z') });
     expect(row).toHaveLength(TABLE_COLS.length);
     const at = (h: string) => row[TABLE_COLS.findIndex((c) => c.h === h)];
     expect(at('Цена')).toBe(395000);

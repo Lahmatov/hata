@@ -6,7 +6,8 @@ import type { Listing } from './types.ts';
 // A 0-100 rating to rank favourites. Transparent on purpose: every part is shown next to the total, so a
 // surprising rank can be traced to one number. Unknown values get a middling score, never zero or full.
 
-export interface Score { total: number; parts: [label: string, got: number, max: number][]; text: string }
+/** local: the €/m² median it compared against (reused by the spreadsheet). */
+export interface Score { total: number; parts: [label: string, got: number, max: number][]; text: string; local: { m: number; label: string; n: number } | null }
 
 const lerp = (x: number, x0: number, x1: number, max: number) => max * Math.min(1, Math.max(0, (x - x0) / (x1 - x0)));
 const CONDITION: Record<string, number> = { new: 10, renovated: 9, good: 6, unknown: 4, needs_renovation: 0 };
@@ -28,5 +29,5 @@ export function score(l: Listing, pool: Listing[], f: Features = featuresFromTex
   ];
   for (const p of parts) p[1] = Math.round(p[1]);
   const total = parts.reduce((s, p) => s + p[1], 0);
-  return { total, parts, text: parts.map(([label, got, max]) => `${label} ${got}/${max}`).join(' · ') };
+  return { total, parts, text: parts.map(([label, got, max]) => `${label} ${got}/${max}`).join(' · '), local };
 }

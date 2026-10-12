@@ -208,13 +208,14 @@ interface Update {
 
 /**
  * Records 👍/👎 and updates the posts: 👍 marks the post(s) in this chat, 👎 deletes the flat's posts in every
- * recipient's chat (falls back to marking them hidden when Telegram refuses).
+ * recipient's chat (falls back to marking them hidden when Telegram refuses). mineOnly: 👎 in the favourites
+ * round, where the other person may still like the flat, so only this chat's post goes.
  */
-export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number) {
+export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number, mineOnly = false) {
   await setReaction(env.KV, kind, chat, gid);
   const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
   const posts = new Map<string, [string, number]>();
-  for (const [c, id] of cat[gid]?.m ?? []) if (kind === 'hide' || c === chat) posts.set(`${c}:${id}`, [c, id]);
+  for (const [c, id] of cat[gid]?.m ?? []) if ((kind === 'hide' && !mineOnly) || c === chat) posts.set(`${c}:${id}`, [c, id]);
   if (pressedMessageId) posts.set(`${chat}:${pressedMessageId}`, [chat, pressedMessageId]);
   for (const [c, id] of posts.values()) {
     if (kind !== 'hide' || !(await tg(env, 'deleteMessage', { chat_id: c, message_id: id }))) {
@@ -245,7 +246,12 @@ export async function handleUpdate(env: Env, u: Update): Promise<void> {
     return;
   }
   if (/^\/export|таблиц|^📊/.test(t)) {
-    await sendTable(env, String(msg.chat.id));
+    try {
+      await sendTable(env, String(msg.chat.id));
+    } catch (e) {
+      console.error(e);
+      await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '📊 Не получилось собрать таблицу, попробуйте ещё раз через минуту.', reply_markup: replyKeyboard });
+    }
     return;
   }
   let text = HELP;
@@ -316,7 +322,7 @@ export function favDeck(cat: Catalogue, reactions: { kind: Kind; chat: string; g
 }
 
 async function appApi(req: Request, env: Env, path: string): Promise<Response> {
-  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean };
+  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean };
   const user = await verifyInitData(body.initData ?? '', env.TELEGRAM_BOT_TOKEN);
   if (!user || !chatIds(env).includes(user)) return json({ error: 'not allowed' }, 403);
   if (path === '/api/deck') {
@@ -338,7 +344,7 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
   if (path === '/api/export') return json({ ok: true, rows: await sendTable(env, user) });
   if (!body.id) return json({ error: 'no id' }, 400);
   if (path === '/api/react' && (body.kind === 'like' || body.kind === 'hide' || body.kind === 'super')) {
-    await applyReaction(env, body.kind, user, body.id);
+    await applyReaction(env, body.kind, user, body.id, undefined, body.mine === true);
     return json({ ok: true });
   }
   if (path === '/api/undo') {

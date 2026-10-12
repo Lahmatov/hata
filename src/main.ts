@@ -5,7 +5,7 @@ import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
 import { classify, worthEnriching } from './filter.ts';
-import { driveMinutes, googleBudgetLeft, listingPoint, schoolPoint } from './geo.ts';
+import { driveMinutes, listingPoint, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
@@ -158,7 +158,8 @@ async function main() {
   }
   if (school) log.info(`school at ${school.lat.toFixed(5)},${school.lon.toFixed(5)} (https://www.openstreetmap.org/?mlat=${school.lat}&mlon=${school.lon}#map=17/${school.lat}/${school.lon})`);
   if (!school) log.warn('school location unknown: set SCHOOL_LAT/SCHOOL_LON');
-  // Over the Google allowance: those flats wait for the next run instead of going out with "🚗 ?".
+  // No answer from the router (error, Google allowance used up): those flats wait for the next run instead of
+  // going out with "🚗 ?" (after a reset they include flats dropped earlier for being too far).
   const deferred = new Set<string>();
   for (const s of seen) {
     const l = store.get(s.listing.id)!;
@@ -166,11 +167,11 @@ async function main() {
       const { p, approx } = await listingPoint(store, l);
       if (!p) continue;
       const min = await driveMinutes(store, p, school);
-      store.setCommute(l.id, min, approx);
-      if (min === null && config.googleMapsKey && !googleBudgetLeft()) deferred.add(l.id);
+      if (min === undefined) deferred.add(l.id);
+      else store.setCommute(l.id, min, approx);
     }
   }
-  if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (Google Routes allowance per run)`);
+  if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (no answer from the router)`);
 
   // Build digest: one item per duplicate group.
   const byGroup = new Map<string, DigestItem>();

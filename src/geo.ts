@@ -10,7 +10,7 @@ let lastNominatim = 0;
 let lastOsrm = 0;
 let googleCalls = 0;
 /** False once this run has used its Google Routes allowance (GOOGLE_MAX_CALLS, default 300). */
-export const googleBudgetLeft = () => googleCalls < Number(process.env.GOOGLE_MAX_CALLS ?? 300);
+const googleBudgetLeft = () => googleCalls < Number(process.env.GOOGLE_MAX_CALLS ?? 300);
 
 /** JSON API call with retries/backoff (APIs, not scraped pages: robots.txt does not apply). */
 async function api<T>(url: string, init: RequestInit = {}, attempts = 3): Promise<T> {
@@ -69,8 +69,11 @@ export function nextMorningDeparture(now = new Date()): string {
   return d.toISOString();
 }
 
-/** Morning drive time in minutes. Google Routes (traffic-aware) if a key is set, else OSRM × traffic factor. */
-export async function driveMinutes(store: Store, from: Point, to: Point): Promise<number | null> {
+/**
+ * Morning drive time in minutes. Google Routes (traffic-aware) if a key is set, else OSRM × traffic factor.
+ * null = no route; undefined = no answer this run (router error or Google allowance used up), try again later.
+ */
+export async function driveMinutes(store: Store, from: Point, to: Point): Promise<number | null | undefined> {
   const r5 = (n: number) => n.toFixed(5);
   const key = `route:${config.googleMapsKey ? 'g' : 'o'}:${r5(from.lat)},${r5(from.lon)}>${r5(to.lat)},${r5(to.lon)}`;
   const cached = store.kvGet<number | null>(key, 24 * 30);
@@ -79,7 +82,7 @@ export async function driveMinutes(store: Store, from: Point, to: Point): Promis
   try {
     if (config.googleMapsKey) {
       // Stay well inside Google's free monthly quota: the rest waits for the next run (not cached).
-      if (!googleBudgetLeft()) return null;
+      if (!googleBudgetLeft()) return undefined;
       googleCalls++;
       const body = {
         origin: { location: { latLng: { latitude: from.lat, longitude: from.lon } } },
@@ -107,7 +110,7 @@ export async function driveMinutes(store: Store, from: Point, to: Point): Promis
     }
   } catch (e) {
     log.warn(`routing failed: ${(e as Error).message}`);
-    return null; // not cached: retry next run
+    return undefined; // not cached: retry next run
   }
   store.kvSet(key, min);
   return min;

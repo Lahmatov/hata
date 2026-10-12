@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import worker, { type Catalogue, deck, derivedSecret, favouritesText, handleUpdate, type KV, listReactions, setReaction, verifyInitData } from '../worker/index.ts';
+import worker, { applyReaction, type Catalogue, deck, derivedSecret, favouritesText, handleUpdate, type KV, listReactions, setReaction, verifyInitData } from '../worker/index.ts';
 import { createHash, createHmac } from 'node:crypto';
 
 /** In-memory stand-in for Cloudflare KV. */
@@ -72,6 +72,10 @@ test.describe('telegram worker', () => {
       expect(calls[0][0]).toBe('answerCallbackQuery');
       expect(calls.filter((c) => c[0] === 'deleteMessage').map((c) => [c[1].chat_id, c[1].message_id])).toEqual([['1', 10], ['2', 20]]);
       expect((await listReactions(kv)).map((r) => r.kind)).toEqual(['hide']);
+      calls.length = 0;
+      // 👎 in the favourites round: the other person may still like it, so their post stays.
+      await applyReaction(env, 'hide', '1', 'g1', undefined, true);
+      expect(calls.filter((c) => c[0] === 'deleteMessage').map((c) => c[1].chat_id)).toEqual(['1']);
       calls.length = 0;
       await handleUpdate(env, { message: { text: '/fav', chat: { id: 999 } } });
       expect(calls).toEqual([]);

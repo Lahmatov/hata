@@ -70,7 +70,7 @@ export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Cat
       y: s.text, e: featuresList(f),
     };
     const members = all.filter((m) => m.group_id === gid && now - Date.parse(m.last_seen) < 7 * 86400_000);
-    (rows[n] ??= {})[gid] = tableRow(l, c, s, { pool, members, prices: store.priceHistory(l.id), school, now });
+    (rows[n] ??= {})[gid] = tableRow(l, c, s, { members, prices: store.priceHistory(l.id), school, now });
   }
   return { catalogue, cards, rows };
 }

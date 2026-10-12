@@ -322,7 +322,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     const write = !(mode === 'fav' && (c.me === kind || (kind === 'like' && c.me === 'super')));
     cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write, prev: c.me });
     if (history.length > 20) history.shift();
-    if (write) api('/api/react', { id: c.id, kind }).catch(() => toast('Не сохранилось, проверьте интернет'));
+    if (write) api('/api/react', { id: c.id, kind, mine: mode === 'fav' }).catch(() => toast('Не сохранилось, проверьте интернет'));
     if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : write ? '❤️ И вам нравится' : '❤️ Оставил');
     else if (kind === 'like') toast('❤️ В избранном');
     else if (kind === 'super') toast('🌟 Суперлайк: список /super');

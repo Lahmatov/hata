@@ -1,5 +1,5 @@
 import { featuresFromText, featuresList } from './adapters/text.ts';
-import { localMedian, routeUrl } from './extras.ts';
+import { routeUrl } from './extras.ts';
 import type { Point } from './geo.ts';
 import type { Score } from './score.ts';
 import { ruleBasedProsCons } from './summarize.ts';
@@ -15,10 +15,10 @@ const SOURCE_RU: Record<string, string> = { imovirtual: 'Imovirtual', idealista:
 const days = (iso: string, now: number) => Math.max(0, Math.floor((now - Date.parse(iso)) / 86400_000));
 
 
-export function tableRow(l: Listing, c: Classified, s: Score, ctx: { pool: Listing[]; members: Listing[]; prices: number[]; school: Point | null; now?: number }): TableCell[] {
+export function tableRow(l: Listing, c: Classified, s: Score, ctx: { members: Listing[]; prices: number[]; school: Point | null; now?: number }): TableCell[] {
   const now = ctx.now ?? Date.now();
   const f = featuresFromText(l.description);
-  const local = l.price_per_m2 ? localMedian(l, ctx.pool) : null;
+  const local = s.local;
   const since = l.listed_since && !Number.isNaN(Date.parse(l.listed_since)) ? l.listed_since : l.first_seen;
   const others = ctx.members.filter((m) => m.id !== l.id).map((m) => `${SOURCE_RU[m.source] ?? m.source}: ${m.url}`);
   const verdict = c.verdict === 'match' ? 'да' : c.verdict === 'negotiate' ? 'дороже бюджета, нужен торг' : `проверить: ${c.reasons.join(', ')}`;
