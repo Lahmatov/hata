@@ -73,8 +73,9 @@ export function buildPosts(items: DigestItem[], failed: string[], date: string, 
   return posts;
 }
 
-/** Sends one post to every recipient; fails only if nobody got it. */
-export async function sendPost(post: Post): Promise<void> {
+/** Sends one post to every recipient; fails only if nobody got it. Returns where it landed. */
+export async function sendPost(post: Post): Promise<{ chatId: string; messageId: number }[]> {
+  const sent: { chatId: string; messageId: number }[] = [];
   const { token, chatIds } = config.telegram;
   if (!token || !chatIds.length) throw new Error('TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set');
   const errors: string[] = [];
@@ -82,16 +83,18 @@ export async function sendPost(post: Post): Promise<void> {
   const asText = { text: post.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...markup };
   for (const [i, chatId] of chatIds.entries()) {
     try {
+      let msg: { message_id?: number } | undefined;
       if (post.photo) {
         try {
-          await call(token, 'sendPhoto', { chat_id: chatId, photo: post.photo, caption: post.text, parse_mode: 'HTML', ...markup });
+          msg = await call(token, 'sendPhoto', { chat_id: chatId, photo: post.photo, caption: post.text, parse_mode: 'HTML', ...markup });
         } catch {
           // Photo URL rejected (expired, too large...): send the text alone.
-          await call(token, 'sendMessage', { chat_id: chatId, ...asText });
+          msg = await call(token, 'sendMessage', { chat_id: chatId, ...asText });
         }
       } else {
-        await call(token, 'sendMessage', { chat_id: chatId, ...asText });
+        msg = await call(token, 'sendMessage', { chat_id: chatId, ...asText });
       }
+      if (msg?.message_id) sent.push({ chatId, messageId: msg.message_id });
     } catch (e) {
       // The position, not only the id: GitHub masks the id when it equals the whole secret.
       errors.push(`recipient ${i + 1} of ${chatIds.length} (${chatId}): ${(e as Error).message}`);
@@ -100,13 +103,14 @@ export async function sendPost(post: Post): Promise<void> {
   if (errors.length === chatIds.length) throw new Error(errors.join('; '));
   for (const e of errors) console.error(`Telegram: ${e}`);
   await new Promise((r) => setTimeout(r, 1100)); // stay under ~1 message/s per chat
+  return sent;
 }
 
 export async function sendTelegram(text: string): Promise<void> {
   await sendPost({ text });
 }
 
-async function call(token: string, method: string, payload: Record<string, unknown>): Promise<void> {
+async function call(token: string, method: string, payload: Record<string, unknown>): Promise<{ message_id?: number } | undefined> {
   for (let attempt = 0; attempt < 4; attempt++) {
     const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: 'POST',
@@ -114,8 +118,8 @@ async function call(token: string, method: string, payload: Record<string, unkno
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(20000),
     });
-    const body = (await res.json()) as { ok: boolean; description?: string; parameters?: { retry_after?: number } };
-    if (body.ok) return;
+    const body = (await res.json()) as { ok: boolean; result?: { message_id?: number }; description?: string; parameters?: { retry_after?: number } };
+    if (body.ok) return body.result;
     if (res.status === 429 || res.status >= 500) {
       await new Promise((r) => setTimeout(r, ((body.parameters?.retry_after ?? 2 ** attempt) + 1) * 1000));
       continue;

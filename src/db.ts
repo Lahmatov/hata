@@ -39,6 +39,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS price_history (id TEXT, price REAL, seen TEXT);
       CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, updated TEXT);
       CREATE TABLE IF NOT EXISTS runs (day TEXT PRIMARY KEY, sent_at TEXT, items INTEGER, failed TEXT);
+      CREATE TABLE IF NOT EXISTS messages (group_id TEXT, chat_id TEXT, message_id INTEGER, PRIMARY KEY (chat_id, message_id));
       CREATE TABLE IF NOT EXISTS reactions (group_id TEXT, kind TEXT, chat_id TEXT, at TEXT, PRIMARY KEY (group_id, chat_id));
     `);
     // Columns added after the first release: add them to existing databases.
@@ -130,6 +131,17 @@ export class Store {
     const since = new Date(Date.now() - maxAgeDays * 86400_000).toISOString();
     return (this.db.prepare(`SELECT id FROM listings WHERE description LIKE '${EMAIL_MARK}%' AND notified_price IS NULL AND last_seen >= ?`)
       .all(since) as { id: string }[]).map((r) => this.get(r.id)!);
+  }
+
+  /** Telegram posts about a flat, so 👎 can remove them from every recipient's chat. */
+  saveMessages(groupId: string, sent: { chatId: string; messageId: number }[]) {
+    const st = this.db.prepare('INSERT OR REPLACE INTO messages VALUES (?, ?, ?)');
+    for (const m of sent) st.run(groupId, m.chatId, m.messageId);
+  }
+
+  messages(groupId: string): { chatId: string; messageId: number }[] {
+    return (this.db.prepare('SELECT chat_id, message_id FROM messages WHERE group_id = ?').all(groupId) as { chat_id: string; message_id: number }[])
+      .map((r) => ({ chatId: r.chat_id, messageId: r.message_id }));
   }
 
   /** Drop cached commute times (e.g. after the school location changed). */

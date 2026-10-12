@@ -221,7 +221,8 @@ async function main() {
   }
   // Mark each flat as notified right after its post, so a crash mid-way doesn't resend the earlier ones.
   for (const p of posts) {
-    await sendPost(p);
+    const sent = await sendPost(p);
+    if (p.item) store.saveMessages(p.item.leader.group_id, sent);
     if (p.item) for (const m of p.item.members) store.markNotified(m.id, m.price);
   }
   for (const it of items) for (const m of it.members) store.markNotified(m.id, m.price);
