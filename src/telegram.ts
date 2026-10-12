@@ -1,4 +1,5 @@
 import { keyboard } from './bot.ts';
+import { log } from './log.ts';
 import { config } from './config.ts';
 import { factsLine } from './summarize.ts';
 import type { Listing } from './types.ts';
@@ -108,6 +109,44 @@ export async function sendPost(post: Post): Promise<{ chatId: string; messageId:
 
 export async function sendTelegram(text: string): Promise<void> {
   await sendPost({ text });
+}
+
+/**
+ * Deletes the chat history with the bot for every recipient: message ids in a private chat are
+ * sequential, so a fresh marker message gives the upper bound. Telegram only lets bots delete messages
+ * younger than 48 hours, so only the last CLEAR_WINDOW ids are tried. Returns how many chats were cleared.
+ */
+export const CLEAR_WINDOW = 10_000;
+
+export async function clearChats(pauseMs = 300): Promise<number> {
+  const { token, chatIds } = config.telegram;
+  let cleared = 0;
+  for (const [n, chatId] of chatIds.entries()) {
+    // One recipient failing (e.g. blocked the bot) must not stop the others.
+    try {
+      const marker = await call(token, 'sendMessage', { chat_id: chatId, text: '🧹 Чищу историю…' });
+      const top = marker?.message_id ?? 0;
+      const refused = new Map<string, number>(); // Telegram's reason → batches
+      for (let from = Math.max(1, top - CLEAR_WINDOW + 1); from <= top; from += 100) {
+        const ids = Array.from({ length: Math.min(100, top - from + 1) }, (_, i) => from + i);
+        try {
+          await call(token, 'deleteMessages', { chat_id: chatId, message_ids: ids });
+        } catch (e) {
+          // Batches of only missing or too old ids are refused; the batch with the fresh marker must not be.
+          if (ids.includes(top)) throw e;
+          const reason = (e as Error).message;
+          refused.set(reason, (refused.get(reason) ?? 0) + 1);
+        }
+        await new Promise((r) => setTimeout(r, pauseMs));
+      }
+      cleared++;
+      const why = [...refused].map(([r, k]) => `${k}× ${r}`).join('; ');
+      log.info(`telegram: chat ${n + 1}/${chatIds.length} cleared up to message ${top}${why ? `; refused batches: ${why}` : ''}`);
+    } catch (e) {
+      log.warn(`telegram: chat ${n + 1}/${chatIds.length} not cleared: ${(e as Error).message}`);
+    }
+  }
+  return cleared;
 }
 
 async function call(token: string, method: string, payload: Record<string, unknown>): Promise<{ message_id?: number } | undefined> {
