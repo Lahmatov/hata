@@ -188,7 +188,7 @@ async function main() {
   // 🔥 deal vs. comparable flats, 💶 price history, 🗺 route to school.
   // Comparable flats: T3 of the minimum size seen in the last 60 days (any of our sources).
   const pool = recent.map((r) => store.get(r.id)!)
-    .filter((l) => l.bedrooms === config.criteria.bedrooms && (l.area_m2 ?? 0) >= config.criteria.minAreaM2 && l.id === l.group_id);
+    .filter((l) => (l.bedrooms ?? 0) >= config.criteria.minBedrooms && (l.area_m2 ?? 0) >= config.criteria.minAreaM2 && l.id === l.group_id);
   for (const it of items) {
     it.deal = dealNote(it.leader, pool);
     it.history = historyNote(store.priceHistory(it.leader.id));

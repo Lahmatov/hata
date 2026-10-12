@@ -19,6 +19,10 @@ const PORTALS: [string, RegExp][] = [
   ['remax', /remax\.pt\/(?:pt\/)?imoveis\/[^"'\s?#]*?\/(\d{6,}-\d+)/],
   ['century21', /century21\.pt\/[^"'\s?#]*?\/(\d{6,})/],
   ['era', /era\.pt\/imovel\/[^"'\s?#]*?(\d{6,})/],
+  ['custojusto', /custojusto\.pt\/[^"'\s?#]+-(\d{7,})(?:[?#]|$)/],
+  ['zome', /zome\.pt\/[^"'\s?#]*?imovel[^"'\s?#]*?(\d{5,})/],
+  ['kw', /kwportugal\.pt\/[^"'\s?#]*?im[oó]vel[^"'\s?#]*?(\d{5,})/],
+  ['trovit', /trovit\.pt\/detail\/(trovit-PT-\d+)/],
 ];
 
 /** Tracking redirects hide the real URL in a parameter (sometimes encoded twice): unwrap it. */

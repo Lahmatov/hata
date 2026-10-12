@@ -25,9 +25,14 @@ test.describe('criteria filter', () => {
     expect(classify(mk({ bathrooms: 1 })).verdict).toBe('reject');
     expect(classify(mk({ bathrooms: null })).verdict).toBe('manual');
   });
-  test('T2 and T4 are rejected', () => {
+  test('T3 and bigger pass, T2 is rejected', () => {
     expect(classify(mk({ bedrooms: 2 })).verdict).toBe('reject');
-    expect(classify(mk({ bedrooms: 4 })).verdict).toBe('reject');
+    expect(classify(mk({ bedrooms: 4 })).verdict).toBe('match');
+    expect(classify(mk({ bedrooms: 6 })).verdict).toBe('match');
+  });
+  test('Odivelas is in the area, Cascais is not', () => {
+    expect(classify(mk({ municipality: 'Odivelas', neighborhood: 'Pontinha' })).verdict).toBe('match');
+    expect(classify(mk({ municipality: 'Cascais', neighborhood: 'Carcavelos' })).verdict).toBe('reject');
   });
   test('outside target area is rejected; accents do not matter', () => {
     expect(classify(mk({ neighborhood: 'Arroios', municipality: 'Lisboa' })).verdict).toBe('reject');

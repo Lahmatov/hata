@@ -80,7 +80,7 @@ export const idealista: Adapter = {
     const t = await token(process.env.IDEALISTA_API_KEY!, process.env.IDEALISTA_API_SECRET!);
     const params = new URLSearchParams({
       operation: 'sale', propertyType: 'homes', center: `${school.lat},${school.lon}`, distance: String(RADIUS_M),
-      maxPrice: String(config.criteria.maxPriceNegotiable), bedrooms: String(config.criteria.bedrooms),
+      maxPrice: String(config.criteria.maxPriceNegotiable), bedrooms: '3,4', // API: 4 means 4 or more
       maxItems: '50', numPage: '1', order: 'publicationDate', sort: 'desc', language: 'pt',
     });
     const res = await fetch(`${API}/3.5/pt/search`, {

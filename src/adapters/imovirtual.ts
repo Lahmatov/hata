@@ -11,7 +11,8 @@ const FLOORS: Record<string, string> = {
 const CONSTRUCTION: Record<string, Condition> = { ready_to_use: 'good', to_renovation: 'needs_renovation', to_completion: 'needs_renovation' };
 
 // Municipality-level searches (T3, ≤ 430k, newest first). Parishes are filtered later by config.areas.
-const AREAS = ['lisboa/amadora', 'lisboa/oeiras', 'lisboa/sintra', 'lisboa/lisboa'];
+const AREAS = ['lisboa/amadora', 'lisboa/oeiras', 'lisboa/sintra', 'lisboa/lisboa', 'lisboa/odivelas'];
+const TYPOLOGIES = ['t3', 't4', 't5']; // bigger ones are rare under the budget
 
 interface SearchItem {
   id: number; slug: string; title: string; estate: string; transaction: string; hidePrice: boolean;
@@ -25,7 +26,7 @@ export const imovirtual: Adapter = {
   name: 'Imovirtual',
   maxPages: 6,
 
-  searchUrls: () => AREAS.map((a) => `${BASE}/pt/resultados/comprar/apartamento,t3/${a}?priceMax=430000&by=LATEST&direction=DESC&limit=72`),
+  searchUrls: () => TYPOLOGIES.flatMap((t) => AREAS.map((a) => `${BASE}/pt/resultados/comprar/apartamento,${t}/${a}?priceMax=430000&by=LATEST&direction=DESC&limit=72`)),
 
   nextPageUrl(body, url, pageNo) {
     const p = nextData(body).props?.pageProps?.data?.searchAds?.pagination;

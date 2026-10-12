@@ -5,7 +5,8 @@ import { bedroomsFromT, factsFromText } from './text.ts';
 // Trovit is a public aggregator (it also indexes listings from portals we can't read directly).
 // We only read its own result pages; outgoing links are kept as-is and never followed.
 const BASE = 'https://casa.trovit.pt';
-const SEARCHES = ['/t3-municipio-amadora', '/t3-municipio-oeiras', '/t3-municipio-sintra', '/t3-benfica-lisboa'];
+const SEARCHES = ['/t3-municipio-amadora', '/t3-municipio-oeiras', '/t3-municipio-sintra', '/t3-municipio-odivelas', '/t3-benfica-lisboa',
+  '/t4-municipio-amadora', '/t4-municipio-oeiras', '/t4-municipio-sintra'];
 
 /** Links go through a click tracker whose params change on every page view; keep the stable detail page. */
 export function stableLink(href: string): { url: string; id: string } {
@@ -42,7 +43,7 @@ export const trovit: Adapter = {
         for (const x of Array.isArray(j) ? j : [j]) ld.push(...(x.about ?? []));
       } catch { /* ignore */ }
     });
-    const place = decodeURIComponent(pageUrl.split('/').filter(Boolean).find((p) => p.startsWith('t3-')) ?? '').replace(/^t3-(municipio-)?/, '').replace(/-/g, ' ');
+    const place = decodeURIComponent(pageUrl.split('/').filter(Boolean).find((p) => /^t\d-/.test(p)) ?? '').replace(/^t\d-(municipio-)?/, '').replace(/-/g, ' ');
     return $('.snippet-listing').map((i, n): RawListing | null => {
       const el = $(n);
       const link = el.find('a[href]').filter((_, a) => !/javascript:|#$/.test($(a).attr('href') ?? '')).first();
@@ -69,7 +70,7 @@ export const trovit: Adapter = {
         elevator: facts.elevator,
         condition: facts.condition,
         neighborhood: place ? place.replace(/\b\w/g, (c) => c.toUpperCase()) : null,
-        municipality: /amadora/.test(pageUrl) ? 'Amadora' : /oeiras/.test(pageUrl) ? 'Oeiras' : /lisboa/.test(pageUrl) ? 'Lisboa' : 'Sintra',
+        municipality: /amadora/.test(pageUrl) ? 'Amadora' : /oeiras/.test(pageUrl) ? 'Oeiras' : /odivelas/.test(pageUrl) ? 'Odivelas' : /lisboa/.test(pageUrl) ? 'Lisboa' : 'Sintra',
         address: null,
         lat: null,
         lon: null,

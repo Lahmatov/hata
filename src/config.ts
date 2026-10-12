@@ -21,7 +21,7 @@ export const config = {
   },
 
   criteria: {
-    bedrooms: 3,
+    minBedrooms: 3, // T3 and bigger (T4, T5, T6+)
     minBathrooms: 2,
     minAreaM2: 90,
     requireGarage: true,
@@ -42,6 +42,7 @@ export const config = {
     'Oeiras', 'Carnaxide', 'Queijas', 'Linda-a-Velha', 'Miraflores', 'Alges', 'Tercena', 'Barcarena', 'Porto Salvo',
     'Sintra', 'Queluz', 'Belas', 'Massama', 'Monte Abraao', 'Rio de Mouro', 'Mem Martins', 'Algueirao', 'Cacem', 'Agualva',
     'Benfica', 'Carnide', 'Sao Domingos de Benfica',
+    'Odivelas', 'Pontinha', 'Famoes', 'Ramada', 'Canecas', 'Povoa de Santo Adriao', 'Olival Basto',
   ],
 
   telegram: {

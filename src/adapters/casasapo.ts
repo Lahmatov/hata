@@ -3,7 +3,8 @@ import type { Adapter, Condition, Http, RawListing } from '../types.ts';
 import { bedroomsFromT, factsFromText } from './text.ts';
 
 const BASE = 'https://casa.sapo.pt';
-const AREAS = ['amadora', 'oeiras', 'sintra', 'lisboa'];
+const AREAS = ['amadora', 'oeiras', 'sintra', 'lisboa', 'odivelas'];
+const TYPOLOGIES = ['t3', 't4', 't5', 't6-ou-superior'];
 const CONDITION: Record<string, Condition> = {
   novo: 'new', 'em construcao': 'new', 'em construção': 'new', renovado: 'renovated', remodelado: 'renovated',
   usado: 'good', 'em uso': 'good', 'para recuperar': 'needs_renovation', ruina: 'needs_renovation', 'em ruínas': 'needs_renovation',
@@ -26,7 +27,7 @@ export const casasapo: Adapter = {
   name: 'Casa Sapo',
   maxPages: 12, // 25 per page (Sintra is large)
 
-  searchUrls: () => AREAS.map((a) => `${BASE}/comprar-apartamentos/t3/${a}/`),
+  searchUrls: () => TYPOLOGIES.flatMap((t) => AREAS.map((a) => `${BASE}/comprar-apartamentos/${t}/${a}/`)),
 
   nextPageUrl(body, url, pageNo) {
     const $ = cheerio.load(body);
