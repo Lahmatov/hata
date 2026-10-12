@@ -49,7 +49,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   .chip.negotiate { background: rgba(245,179,1,.2); color: #b27f00; }
   .chip.manual { background: rgba(142,142,147,.2); color: var(--hint); }
   .facts { color: var(--hint); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .links { display: flex; gap: 14px; }
+  .links { display: flex; flex-wrap: wrap; gap: 6px 14px; }
   .links a { color: var(--link); text-decoration: none; font-weight: 600; }
   nav { display: flex; justify-content: center; align-items: center; gap: 22px; padding-bottom: env(safe-area-inset-bottom); }
   nav button { border: 0; border-radius: 50%; background: var(--card); box-shadow: 0 3px 12px rgba(0,0,0,.12);
@@ -89,6 +89,13 @@ export const APP_HTML = /* html */ `<!doctype html>
   const haptic = (t) => { try { tg.HapticFeedback.impactOccurred(t); } catch (e) {} };
   function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.opacity = 0, 1800); }
   function open(url) { if (!url) return; if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank'); }
+  // Telegram's own "Share" in the ⋯ menu always shares the bot; this shares the flat itself.
+  function share(c) {
+    const text = [money(c.p), c.b != null ? 'T' + c.b : null, c.a != null ? Math.round(c.a) + ' м²' : null,
+      c.c != null ? '🚗 ' + Math.round(c.c) + ' мин до школы' : null, c.t].filter(Boolean).join(' · ');
+    const url = 'https://t.me/share/url?url=' + encodeURIComponent(c.u) + '&text=' + encodeURIComponent(text);
+    if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, '_blank');
+  }
   const money = (n) => n == null ? 'цена ?' : n.toLocaleString('ru-RU').replace(/,/g, ' ') + ' €';
 
   async function api(path, body) {
@@ -149,6 +156,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     const a1 = el('a', '', 'Открыть объявление'); a1.href = '#'; a1.onclick = (e) => { e.preventDefault(); open(c.u); };
     links.appendChild(a1);
     if (c.r) { const a2 = el('a', '', '🗺 Маршрут'); a2.href = '#'; a2.onclick = (e) => { e.preventDefault(); open(c.r); }; links.appendChild(a2); }
+    const a3 = el('a', '', '📤 Поделиться'); a3.href = '#'; a3.onclick = (e) => { e.preventDefault(); share(c); }; links.appendChild(a3);
     info.appendChild(links);
     card.appendChild(info);
     show();
