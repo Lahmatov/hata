@@ -49,26 +49,42 @@ export async function derivedSecret(token: string, purpose: 'webhook' | 'sync'):
 }
 
 const chatIds = (env: Env) => env.TELEGRAM_CHAT_ID.split(/[^-\w@]+/).filter((s) => /^(-?\d+|@\w+)$/.test(s));
-// Reaction keys: r:<kind>:<chat>:<group id> (the group id may itself contain ':').
-const rKey = (kind: Kind, chat: string, gid: string) => `r:${kind}:${chat}:${gid}`;
+// Reactions: one KV key per person and flat, the kind in its metadata, so a press costs one write and no
+// delete (free plan: 1,000 writes and 1,000 deletes a day). Key: v:<chat>:<group id> (the id may contain ':').
+// Older presses used r:<kind>:<chat>:<group id>; they are still read, and a v: key for the same pair wins.
+const vKey = (chat: string, gid: string) => `v:${chat}:${gid}`;
 
-export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string; gid: string; at: string }[]> {
-  const out: { kind: Kind; chat: string; gid: string; at: string }[] = [];
+async function listAll(kv: KV, prefix: string) {
+  const keys: { name: string; metadata?: unknown }[] = [];
   let cursor: string | undefined;
   do {
-    const page = await kv.list({ prefix: 'r:', cursor });
-    for (const k of page.keys) {
-      const [, kind, chat, ...rest] = k.name.split(':');
-      out.push({ kind: kind as Kind, chat, gid: rest.join(':'), at: (k.metadata as { at?: string } | undefined)?.at ?? '' });
-    }
+    const page = await kv.list({ prefix, cursor });
+    keys.push(...page.keys);
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
-  return out;
+  return keys;
 }
 
-export async function setReaction(kv: KV, kind: Kind, chat: string, gid: string) {
-  await kv.put(rKey(kind, chat, gid), '1', { metadata: { at: new Date().toISOString() } });
-  for (const other of ['like', 'hide', 'super'] as const) if (other !== kind) await kv.delete(rKey(other, chat, gid));
+export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string; gid: string; at: string }[]> {
+  const byPair = new Map<string, { kind: Kind; chat: string; gid: string; at: string }>();
+  for (const k of await listAll(kv, 'r:')) {
+    const [, kind, chat, ...rest] = k.name.split(':');
+    const gid = rest.join(':');
+    byPair.set(`${chat}:${gid}`, { kind: kind as Kind, chat, gid, at: (k.metadata as { at?: string } | undefined)?.at ?? '' });
+  }
+  for (const k of await listAll(kv, 'v:')) {
+    const [, chat, ...rest] = k.name.split(':');
+    const meta = (k.metadata ?? {}) as { kind?: Kind; at?: string };
+    const pair = `${chat}:${rest.join(':')}`;
+    if (!meta.kind) byPair.delete(pair); // taken back (undo), also hides an older r: key
+    else byPair.set(pair, { kind: meta.kind, chat, gid: rest.join(':'), at: meta.at ?? '' });
+  }
+  return [...byPair.values()];
+}
+
+export async function setReaction(kv: KV, kind: Kind | null, chat: string, gid: string) {
+  // kind null = taken back: an empty marker (still one write) hides any older r: key for the pair.
+  await kv.put(vKey(chat, gid), '1', { metadata: kind ? { kind, at: new Date().toISOString() } : {} });
 }
 
 /** 👍 (or 🌟) flats still on sale (seen by the monitor in the last 3 days), closest to school first. */
@@ -216,7 +232,7 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
   }
   if (path === '/api/undo') {
     // Takes back this user's judgement (a deleted post stays deleted; the card comes back to the deck).
-    for (const k of ['like', 'hide', 'super'] as const) await env.KV.delete(rKey(k, user, body.id));
+    await setReaction(env.KV, null, user, body.id);
     return json({ ok: true });
   }
   return json({ error: 'unknown' }, 404);
@@ -242,7 +258,7 @@ export default {
       let added = 0;
       for (const r of body.reactions ?? []) {
         if (have.has(`${r.chat}:${r.gid}`)) continue;
-        await env.KV.put(rKey(r.kind, r.chat, r.gid), '1', { metadata: { at: new Date().toISOString() } });
+        await setReaction(env.KV, r.kind, r.chat, r.gid);
         added++;
       }
       return json({ ok: true, added });

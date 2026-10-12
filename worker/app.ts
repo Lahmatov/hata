@@ -116,7 +116,7 @@ export const APP_HTML = /* html */ `<!doctype html>
       for (const c of d.cards) if (!cards.some((x) => x.id === c.id)) cards.push(c);
       failed = '';
     } catch (e) {
-      failed = e.message === 'forbidden' ? 'Нет доступа. Откройте свайпы из бота «Хата».' : 'Не удалось загрузить квартиры. Потяните вниз или откройте снова.';
+      failed = e.message === 'forbidden' ? 'Нет доступа. Откройте свайпы из бота «Хата».' : 'Не удалось загрузить квартиры. Нажмите ⋯ → «Обновить страницу».';
     }
     loading = false;
     render();
