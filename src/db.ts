@@ -15,6 +15,9 @@ const COLS = [
   'condition', 'neighborhood', 'municipality', 'address', 'lat', 'lon', 'description', 'listed_since', 'image',
 ] as const;
 
+/** 👍, 👎 and 🌟 (super like, kept as a separate list). */
+export type Reaction = 'like' | 'hide' | 'super';
+
 /** Prefix of the description of listings that came from alert e-mails (see adapters/email.ts). */
 export const EMAIL_MARK = 'Из почтовой рассылки';
 
@@ -125,16 +128,16 @@ export class Store {
   }
 
   /** 👍 / 👎 from Telegram buttons, one per person per flat (the latest wins). */
-  setReaction(groupId: string, kind: 'like' | 'hide', chatId: string) {
+  setReaction(groupId: string, kind: Reaction, chatId: string) {
     this.db.prepare('INSERT OR REPLACE INTO reactions VALUES (?, ?, ?, ?)').run(groupId, kind, chatId, new Date().toISOString());
   }
 
-  reactionRows(kind: 'like' | 'hide'): { chat: string; gid: string }[] {
+  reactionRows(kind: Reaction): { chat: string; gid: string }[] {
     return (this.db.prepare('SELECT chat_id, group_id FROM reactions WHERE kind = ?').all(kind) as { chat_id: string; group_id: string }[])
       .map((r) => ({ chat: r.chat_id, gid: r.group_id }));
   }
 
-  reactions(kind: 'like' | 'hide'): Set<string> {
+  reactions(kind: Reaction): Set<string> {
     return new Set((this.db.prepare('SELECT DISTINCT group_id FROM reactions WHERE kind = ?').all(kind) as { group_id: string }[]).map((r) => r.group_id));
   }
 

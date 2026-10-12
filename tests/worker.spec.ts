@@ -116,4 +116,40 @@ test.describe('swipe app', () => {
     expect(await ok.json()).toEqual({ total: 1, cards: [expect.objectContaining({ id: 'g1', t: 'Alfragide', i: ['https://img/1.jpg', 'https://img/2.jpg'], f: 'facts' })] });
     expect((await ask(1)).status).toBe(403);
   });
+
+  test('super like: its own list, replaces a plain like, and leaves the deck', async () => {
+    const kv = memKV();
+    const now = new Date().toISOString();
+    await kv.put('catalogue', JSON.stringify({
+      a: { t: 'Alfragide', u: 'https://x/a', p: 380000, a: 115, c: 4, s: now, m: [], k: 'match' },
+      b: { t: 'Carnaxide', u: 'https://x/b', p: 395000, a: 98, c: 9, s: now, m: [], k: 'match' },
+    }));
+    const sent: { method: string; body: Record<string, unknown> }[] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init: { body: string }) => {
+      sent.push({ method: String(url).split('/').pop()!, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ ok: true }));
+    }) as typeof fetch;
+    try {
+      const env = { KV: kv, TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: '1' };
+      await setReaction(kv, 'like', '1', 'a');
+      await handleUpdate(env, { callback_query: { id: 'q', data: 's|a', message: { message_id: 7, chat: { id: 1 } } } });
+      await setReaction(kv, 'like', '1', 'b');
+      expect((await listReactions(kv)).map((r) => `${r.kind}:${r.gid}`).sort()).toEqual(['like:b', 'super:a']);
+      expect(sent.find((x) => x.method === 'editMessageReplyMarkup')?.body.reply_markup).toEqual(expect.objectContaining({
+        inline_keyboard: [[expect.anything(), expect.objectContaining({ text: '🌟 Супер!' }), expect.anything()]] }));
+
+      sent.length = 0;
+      await handleUpdate(env, { message: { text: '🌟 Суперлайки', chat: { id: 1 } } });
+      const reply = String(sent.find((x) => x.method === 'sendMessage')?.body.text);
+      expect(reply).toContain('🌟 <b>Суперлайки</b>: 1');
+      expect(reply).toContain('Alfragide');
+      expect(reply).not.toContain('Carnaxide');
+
+      const cat = (await kv.get('catalogue', 'json')) as Catalogue;
+      expect(deck(cat, await listReactions(kv), '1').map((c) => c.id)).toEqual([]);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
 });
