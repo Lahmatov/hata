@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { type Catalogue, derivedSecret, handleUpdate, favouritesText, type KV, listReactions, setReaction } from '../worker/index.ts';
-import { createHash } from 'node:crypto';
+import worker, { type Catalogue, deck, derivedSecret, favouritesText, handleUpdate, type KV, listReactions, setReaction, verifyInitData } from '../worker/index.ts';
+import { createHash, createHmac } from 'node:crypto';
 
 /** In-memory stand-in for Cloudflare KV. */
 function memKV(): KV & { data: Map<string, { v: string; metadata?: unknown }> } {
@@ -66,5 +66,54 @@ test.describe('telegram worker', () => {
     } finally {
       globalThis.fetch = orig;
     }
+  });
+});
+
+test.describe('swipe app', () => {
+  const token = '123:secret';
+  const signed = (fields: Record<string, string>) => {
+    const check = Object.entries(fields).map(([k, v]) => `${k}=${v}`).sort().join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(token).digest();
+    const hash = createHmac('sha256', secret).update(check).digest('hex');
+    return new URLSearchParams({ ...fields, hash }).toString();
+  };
+
+  test('Telegram launch data: valid signature gives the user id; forged or stale data is refused', async () => {
+    const now = Date.parse('2026-10-12T12:00:00Z');
+    const fields = { auth_date: String(now / 1000 - 60), query_id: 'q', user: JSON.stringify({ id: 40556800, first_name: 'E' }) };
+    expect(await verifyInitData(signed(fields), token, 7 * 86400, now)).toBe('40556800');
+    expect(await verifyInitData(signed(fields).replace('40556800', '1'), token, 7 * 86400, now)).toBeNull();
+    expect(await verifyInitData(signed(fields), 'other:token', 7 * 86400, now)).toBeNull();
+    expect(await verifyInitData(signed({ ...fields, auth_date: String(now / 1000 - 8 * 86400) }), token, 7 * 86400, now)).toBeNull();
+    expect(await verifyInitData('', token)).toBeNull();
+  });
+
+  test('deck: hides what anyone hid and what I judged, matches first, then closest', () => {
+    const now = Date.parse('2026-10-12T12:00:00Z');
+    const base = { u: 'u', p: 1, a: 100, s: '2026-10-12T07:00:00Z', m: [] as [string, number][] };
+    const cat: Catalogue = {
+      far: { ...base, t: 'far', c: 30, k: 'match' }, near: { ...base, t: 'near', c: 5, k: 'match' },
+      manual: { ...base, t: 'manual', c: 1, k: 'manual' }, hiddenByWife: { ...base, t: 'h', c: 2, k: 'match' },
+      likedByMe: { ...base, t: 'l', c: 2, k: 'match' }, likedByWife: { ...base, t: 'w', c: 9, k: 'match' },
+      gone: { ...base, t: 'g', c: 1, k: 'match', s: '2026-10-01T07:00:00Z' },
+    };
+    const rs = [
+      { kind: 'hide' as const, chat: 'wife', gid: 'hiddenByWife' }, { kind: 'like' as const, chat: 'me', gid: 'likedByMe' },
+      { kind: 'like' as const, chat: 'wife', gid: 'likedByWife' },
+    ];
+    expect(deck(cat, rs, 'me', now).map((c) => c.id)).toEqual(['near', 'likedByWife', 'far', 'manual']);
+  });
+
+  test('deck API: details and photos come from the card chunk; strangers get 403', async () => {
+    const kv = memKV();
+    const now = new Date().toISOString();
+    await kv.put('catalogue', JSON.stringify({ g1: { t: 'Alfragide', u: 'u', p: 1, a: 100, c: 5, s: now, m: [], k: 'match', n: 0 } }));
+    await kv.put('cards:0', JSON.stringify({ g1: { h: 'T3', i: ['https://img/1.jpg', 'https://img/2.jpg'], f: 'facts' } }));
+    const env = { KV: kv, TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: '40556800' };
+    const ask = async (id: number) => worker.fetch(new Request('https://w/api/deck', { method: 'POST',
+      body: JSON.stringify({ initData: signed({ auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id }) }) }) }), env);
+    const ok = await ask(40556800);
+    expect(await ok.json()).toEqual({ total: 1, cards: [expect.objectContaining({ id: 'g1', t: 'Alfragide', i: ['https://img/1.jpg', 'https://img/2.jpg'], f: 'facts' })] });
+    expect((await ask(1)).status).toBe(403);
   });
 });

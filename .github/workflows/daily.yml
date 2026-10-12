@@ -59,6 +59,8 @@ jobs:
           IMAP_USER: ${{ secrets.IMAP_USER }}
           IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
           IMAP_FOLDER: ${{ secrets.IMAP_FOLDER || 'hata' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             npx tsx src/main.ts --lisbon-hours=7,13,19

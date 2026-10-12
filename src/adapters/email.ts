@@ -121,6 +121,7 @@ export function parseAlertEmail(html: string, receivedAt: string | null = null):
         description: `${EMAIL_MARK} ${source}: ${text.slice(0, 300)}`,
         listed_since: prev?.listed_since ?? receivedAt,
         image: prev?.image ?? img,
+        images: prev?.images ?? (img ? [img] : null),
       };
       found.set(key, listing);
       break;
