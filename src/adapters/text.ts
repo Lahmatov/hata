@@ -43,3 +43,41 @@ export function nextData<T = any>(html: string): T {
   if (!m) throw new Error('__NEXT_DATA__ not found (page layout changed?)');
   return JSON.parse(m[1]) as T;
 }
+
+export interface Features {
+  balcony: boolean; terrace: boolean; pool: boolean; ac: boolean; storage: boolean; fireplace: boolean;
+  closedCondo: boolean; kitchen: boolean; suites: number | null; energy: string | null; year: number | null;
+}
+
+/** Extras mentioned in Portuguese listing text (absent = not mentioned, not "no"). */
+export function featuresFromText(text: string | null | undefined): Features {
+  const t = (text ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const suites = t.match(/\b(\d|uma|duas|dois|tres)\s+suites?\b/)?.[1];
+  const energy = t.match(/(?:certificad[oa]\s+energetic[oa]|classe\s+energetica|eficiencia\s+energetica)\s*(?:[:\-]|de|classe)?\s*\b([a-f][+-]?)(?![a-z])/)?.[1];
+  const year = Number(t.match(/\b(?:construid[oa]\s+em|construcao\s+(?:de|em)|ano\s+(?:de\s+)?construcao:?)\s*((?:19|20)\d\d)\b/)?.[1]);
+  return {
+    balcony: /\bvarandas?\b|\bmarquise\b/.test(t),
+    terrace: /\bterracos?\b/.test(t),
+    pool: /\bpiscinas?\b/.test(t),
+    ac: /\bar\s+condicionado\b|\bclimatizac|\bac\s+(?:em|nos?)\b/.test(t),
+    storage: /\barrecadac|\bdespensa\b/.test(t),
+    fireplace: /\blareira\b|recuperador\s+de\s+calor/.test(t),
+    closedCondo: /\bcondominio\s+fechado\b/.test(t),
+    kitchen: /\bcozinha\s+(?:totalmente\s+|completamente\s+)?equipada\b/.test(t),
+    suites: suites ? ({ uma: 1, dois: 2, duas: 2, tres: 3 } as Record<string, number>)[suites] ?? Number(suites) : null,
+    energy: energy ? energy.toUpperCase() : null,
+    year: year >= 1900 && year <= new Date().getFullYear() + 3 ? year : null,
+  };
+}
+
+const FEATURE_RU: [keyof Features, string][] = [
+  ['balcony', 'балкон'], ['terrace', 'терраса'], ['pool', 'бассейн'], ['ac', 'кондиционер'], ['storage', 'кладовка'],
+  ['fireplace', 'камин'], ['closedCondo', 'закрытый комплекс'], ['kitchen', 'кухня с техникой'],
+];
+
+/** "балкон, кондиционер, 1 спальня с санузлом" */
+export function featuresList(f: Features): string[] {
+  const out = FEATURE_RU.filter(([k]) => f[k] === true).map(([, ru]) => ru);
+  if (f.suites) out.push(f.suites === 1 ? 'спальня с санузлом' : `${f.suites} спальни с санузлом`);
+  return out;
+}

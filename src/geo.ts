@@ -8,6 +8,9 @@ export interface Point { lat: number; lon: number }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let lastNominatim = 0;
 let lastOsrm = 0;
+let googleCalls = 0;
+/** False once this run has used its Google Routes allowance (GOOGLE_MAX_CALLS, default 300). */
+export const googleBudgetLeft = () => googleCalls < Number(process.env.GOOGLE_MAX_CALLS ?? 300);
 
 /** JSON API call with retries/backoff (APIs, not scraped pages: robots.txt does not apply). */
 async function api<T>(url: string, init: RequestInit = {}, attempts = 3): Promise<T> {
@@ -75,6 +78,9 @@ export async function driveMinutes(store: Store, from: Point, to: Point): Promis
   let min: number | null = null;
   try {
     if (config.googleMapsKey) {
+      // Stay well inside Google's free monthly quota: the rest waits for the next run (not cached).
+      if (!googleBudgetLeft()) return null;
+      googleCalls++;
       const body = {
         origin: { location: { latLng: { latitude: from.lat, longitude: from.lon } } },
         destination: { location: { latLng: { latitude: to.lat, longitude: to.lon } } },

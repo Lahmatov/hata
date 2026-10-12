@@ -5,7 +5,7 @@ import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
 import { classify, worthEnriching } from './filter.ts';
-import { driveMinutes, listingPoint, schoolPoint } from './geo.ts';
+import { driveMinutes, googleBudgetLeft, listingPoint, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
@@ -149,28 +149,35 @@ async function main() {
   for (const [id, gid] of groupDuplicates(recent)) store.setGroup(id, gid);
 
   // Commute for listings that still lack it.
-  const schoolKey = school ? `${school.lat},${school.lon}` : '';
+  // Also recompute when the routing changes (a Google Maps key added or removed): the old numbers came from the other router.
+  const schoolKey = school ? `${school.lat},${school.lon}${config.googleMapsKey ? ' google' : ''}` : '';
   if (school && store.kvGet<string>('school:point') !== schoolKey) {
-    log.info('school location changed: recomputing commute times');
+    log.info('school location or routing changed: recomputing commute times');
     store.resetCommutes();
     store.kvSet('school:point', schoolKey);
   }
   if (school) log.info(`school at ${school.lat.toFixed(5)},${school.lon.toFixed(5)} (https://www.openstreetmap.org/?mlat=${school.lat}&mlon=${school.lon}#map=17/${school.lat}/${school.lon})`);
   if (!school) log.warn('school location unknown: set SCHOOL_LAT/SCHOOL_LON');
+  // Over the Google allowance: those flats wait for the next run instead of going out with "🚗 ?".
+  const deferred = new Set<string>();
   for (const s of seen) {
     const l = store.get(s.listing.id)!;
     if (school && l.commute_min === null && classify(l).verdict !== 'reject') {
       const { p, approx } = await listingPoint(store, l);
-      if (p) store.setCommute(l.id, await driveMinutes(store, p, school), approx);
+      if (!p) continue;
+      const min = await driveMinutes(store, p, school);
+      store.setCommute(l.id, min, approx);
+      if (min === null && config.googleMapsKey && !googleBudgetLeft()) deferred.add(l.id);
     }
   }
+  if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (Google Routes allowance per run)`);
 
   // Build digest: one item per duplicate group.
   const byGroup = new Map<string, DigestItem>();
   for (const s of seen) {
     const l = store.get(s.listing.id)!;
     const c = classify(l);
-    if (c.verdict === 'reject' || hidden.has(l.group_id)) continue;
+    if (c.verdict === 'reject' || hidden.has(l.group_id) || deferred.has(l.id)) continue;
     // Links shown: same property on other portals, still seen within the last week (no dead links).
     const members = recent.map((r) => store.get(r.id)!)
       .filter((m) => m.group_id === l.group_id && Date.now() - Date.parse(m.last_seen) < 7 * 86400_000);

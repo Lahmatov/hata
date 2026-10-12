@@ -1,5 +1,6 @@
 // The swipe app page (Telegram Mini App), served by the worker at /app. Plain HTML/CSS/JS, no build step.
 // Cards come from /api/deck; swipe right is 👍, up is 🌟 super like, left is 👎 (same reactions as the post buttons).
+// Tabs: all new flats, ⭐ favourites (second round over what either of you liked) and 🏆 the rating list.
 
 export const APP_HTML = /* html */ `<!doctype html>
 <html lang="ru">
@@ -21,9 +22,24 @@ export const APP_HTML = /* html */ `<!doctype html>
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
   #app { display: flex; flex-direction: column; height: 100%; padding: 8px 12px 12px; gap: 10px; }
-  header { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px; }
-  header b { font-size: 18px; }
-  header span { color: var(--hint); font-size: 13px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px; }
+  header span { color: var(--hint); font-size: 12px; white-space: nowrap; }
+  .tabs { display: flex; background: var(--card); border-radius: 10px; padding: 2px; }
+  .tabs button { border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; padding: 5px 9px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+  .tabs button.on { background: var(--bg); box-shadow: 0 1px 4px rgba(0,0,0,.12); font-weight: 600; }
+  .score { position: absolute; top: 18px; right: 10px; background: rgba(0,0,0,.6); color: #fff; border-radius: 12px; padding: 3px 9px;
+    font-weight: 700; font-size: 14px; }
+  .who { font-size: 13px; font-weight: 600; }
+  .feats { display: flex; flex-wrap: wrap; gap: 4px; }
+  .feats i { font-style: normal; font-size: 11px; padding: 1px 7px; border-radius: 9px; background: rgba(47,128,237,.12); color: var(--link); }
+  .why { color: var(--hint); font-size: 12px; }
+  #rank { position: absolute; inset: 0; overflow-y: auto; display: none; -webkit-overflow-scrolling: touch; }
+  #rank .row { display: grid; grid-template-columns: 34px 1fr auto; gap: 2px 8px; padding: 9px 6px; border-bottom: 1px solid var(--card); cursor: pointer; }
+  #rank .n { grid-row: span 2; font-size: 20px; font-weight: 700; color: var(--hint); text-align: center; }
+  #rank .q { grid-row: span 2; font-size: 18px; font-weight: 700; align-self: center; }
+  #rank .l1 { font-weight: 600; } #rank .l2 { font-size: 12px; color: var(--hint); }
+  .export { display: block; width: 100%; margin: 10px 0 4px; padding: 11px; border: 0; border-radius: 12px; background: var(--link); color: #fff;
+    font: inherit; font-weight: 600; cursor: pointer; }
   #stack { position: relative; flex: 1; min-height: 0; }
   .card { position: absolute; inset: 0; border-radius: 18px; overflow: hidden; background: var(--card);
     box-shadow: 0 6px 24px rgba(0,0,0,.14); display: flex; flex-direction: column; touch-action: none; user-select: none;
@@ -67,8 +83,12 @@ export const APP_HTML = /* html */ `<!doctype html>
 </head>
 <body>
 <div id="app">
-  <header><b>🏠 Хата</b><span id="left"></span></header>
+  <header>
+    <div class="tabs"><button data-m="all" class="on">🏠 Новые</button><button data-m="fav">⭐ Избранное</button><button data-m="rank">🏆 Рейтинг</button></div>
+    <span id="left"></span>
+  </header>
   <div id="stack"></div>
+  <div id="rankwrap" style="position:relative;flex:1;min-height:0;display:none"><div id="rank"></div></div>
   <nav>
     <button class="small undo" id="undo" aria-label="Вернуть" disabled>↩</button>
     <button class="big no" id="no" aria-label="Не нравится">✖</button>
@@ -84,7 +104,8 @@ export const APP_HTML = /* html */ `<!doctype html>
   const initData = (tg && tg.initData) || '';
   const $ = (id) => document.getElementById(id);
   const stack = $('stack');
-  let cards = [], total = 0, judged = 0, loading = false, failed = '';
+  let cards = [], total = 0, judged = 0, loading = false, failed = '', mode = 'all', names = {}, first = null;
+  const me = String((tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || '');
   const history = [];           // [{ card, kind }] for undo
   const sent = new Set();       // ids judged in this session (kept out of the next deck page)
 
@@ -111,7 +132,11 @@ export const APP_HTML = /* html */ `<!doctype html>
     if (loading) return;
     loading = true;
     try {
-      const d = await api('/api/deck', { exclude: cards.map((c) => c.id).concat([...sent]) });
+      const m = mode;
+      const d = await api('/api/deck', { mode: m, first, exclude: cards.map((c) => c.id).concat([...sent]) });
+      if (m !== mode) return;
+      first = null;
+      if (d.names) names = d.names;
       total = d.total + cards.length; judged = 0;
       for (const c of d.cards) if (!cards.some((x) => x.id === c.id)) cards.push(c);
       failed = '';
@@ -121,6 +146,61 @@ export const APP_HTML = /* html */ `<!doctype html>
     loading = false;
     render();
   }
+
+  // Who liked it: "❤️ вы · 🌟 Мария" (favourites only).
+  function whoLine(c) {
+    const other = Object.keys(names).filter((id) => id !== me).map((id) => names[id])[0] || 'второй';
+    const icon = (k) => k === 'super' ? '🌟' : k === 'like' ? '❤️' : k === 'hide' ? '👎' : null;
+    return [c.me && icon(c.me) + ' вы', c.ot && icon(c.ot) + ' ' + other].filter(Boolean).join(' · ');
+  }
+
+  async function loadRank() {
+    const box = $('rank');
+    box.innerHTML = '<p style="text-align:center;color:var(--hint)">Считаю рейтинг…</p>';
+    try {
+      const d = await api('/api/deck', { mode: 'fav', slim: true });
+      names = d.names || names;
+      box.textContent = '';
+      $('left').textContent = '';
+      if (!d.cards.length) { box.innerHTML = '<p style="text-align:center;color:var(--hint)">В избранном пока пусто.<br>Свайпайте вправо во вкладке «Новые».</p>'; return; }
+      const ex = el('button', 'export', '📊 Таблица Excel в чат с ботом');
+      ex.onclick = exportTable;
+      box.appendChild(ex);
+      d.cards.forEach((c, i) => {
+        const r = el('div', 'row');
+        r.appendChild(el('div', 'n', String(i + 1)));
+        r.appendChild(el('div', 'l1', [money(c.p), c.a != null ? Math.round(c.a) + ' м²' : null, c.c != null ? '🚗 ' + Math.round(c.c) + ' мин' : null].filter(Boolean).join(' · ')));
+        r.appendChild(el('div', 'q', c.q != null ? String(c.q) : '–'));
+        r.appendChild(el('div', 'l2', (c.t || '') + ' · ' + whoLine(c)));
+        r.onclick = () => { first = c.id; setMode('fav'); };
+        box.appendChild(r);
+      });
+      box.appendChild(el('p', 'why', 'Баллы из 100: цена 25, дорога до школы 25, площадь 15, цена за м² против района 15, состояние 10, удобства 10. Нажмите на строку, чтобы открыть карточку.'));
+    } catch (e) {
+      box.innerHTML = '<p style="text-align:center;color:var(--hint)">Не удалось загрузить. Нажмите ⋯ → «Обновить страницу».</p>';
+    }
+  }
+
+  async function exportTable() {
+    toast('Собираю таблицу…');
+    try { const d = await api('/api/export', {}); toast(d.rows ? '📊 Таблица в чате с ботом' : 'В избранном пока пусто'); }
+    catch (e) { toast('Не получилось, попробуйте /export в чате'); }
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.m === m));
+    const rank = m === 'rank';
+    $('stack').style.display = rank ? 'none' : '';
+    $('rankwrap').style.display = rank ? 'block' : 'none';
+    $('rank').style.display = rank ? 'block' : 'none';
+    document.querySelector('nav').style.display = rank ? 'none' : '';
+    cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = '';
+    if (rank) { loadRank(); return; }
+    render();
+    load();
+  }
+  document.querySelectorAll('.tabs button').forEach((b) => b.onclick = () => setMode(b.dataset.m));
 
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
@@ -144,6 +224,7 @@ export const APP_HTML = /* html */ `<!doctype html>
       c.c != null ? '🚗 ' + Math.round(c.c) + ' мин до школы' : null].filter(Boolean).join(' · ')));
     shade.appendChild(el('div', 'place', c.t || ''));
     photo.appendChild(shade);
+    if (c.q != null) photo.appendChild(el('div', 'score', '🏆 ' + c.q));
     photo.appendChild(el('div', 'stamp yes', 'ДА'));
     photo.appendChild(el('div', 'stamp no', 'НЕТ'));
     photo.appendChild(el('div', 'stamp super', 'СУПЕР'));
@@ -152,9 +233,12 @@ export const APP_HTML = /* html */ `<!doctype html>
     const info = el('div', 'info');
     const chip = c.k === 'manual' ? ['manual', '❓ проверить: ' + (c.w || []).join(', ')]
       : c.k === 'negotiate' ? ['negotiate', '💬 выше бюджета, нужен торг'] : ['match', '✅ подходит по всем критериям'];
+    if (mode === 'fav') info.appendChild(el('div', 'who', whoLine(c)));
     info.appendChild(el('span', 'chip ' + chip[0], chip[1]));
+    if (c.e && c.e.length) { const fs = el('div', 'feats'); c.e.forEach((t) => fs.appendChild(el('i', '', t))); info.appendChild(fs); }
     if (c.x && /[^➕➖—\s]/u.test(c.x)) info.appendChild(el('div', '', c.x));
     if (c.f) info.appendChild(el('div', 'facts', c.f));
+    if (c.y) info.appendChild(el('div', 'why', '🏆 ' + c.q + '/100: ' + c.y));
     const links = el('div', 'links');
     const a1 = el('a', '', 'Открыть объявление'); a1.href = '#'; a1.onclick = (e) => { e.preventDefault(); open(c.u); };
     links.appendChild(a1);
@@ -174,7 +258,8 @@ export const APP_HTML = /* html */ `<!doctype html>
     $('left').textContent = cards.length ? 'осталось ' + left : '';
     if (!cards.length) {
       const e = el('div', 'empty');
-      e.innerHTML = failed ? '<p></p>' : '<p><div>🎉</div>Всё просмотрено.<br>Новые квартиры появятся после следующей рассылки.</p>';
+      e.innerHTML = failed ? '<p></p>' : mode === 'fav' ? '<p><div>⭐</div>Избранное пройдено.<br>Итог во вкладке «🏆 Рейтинг», там же таблица Excel.</p>'
+        : '<p><div>🎉</div>Всё просмотрено.<br>Новые квартиры появятся после следующей рассылки.</p>';
       if (failed) e.firstChild.textContent = failed;
       if (loading) e.innerHTML = '<p>Загружаю квартиры…</p>';
       stack.appendChild(e);
@@ -233,11 +318,14 @@ export const APP_HTML = /* html */ `<!doctype html>
     card.style.transition = 'transform .3s ease-out';
     card.style.transform = kind === 'super' ? 'translate(0, -130vh)'
       : 'translate(' + (kind === 'like' ? 150 : -150) + 'vw, 40px) rotate(' + (kind === 'like' ? 30 : -30) + 'deg)';
-    cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind });
+    // Favourites: swiping right on your own like just moves on (no write); undo restores the previous reaction.
+    const write = !(mode === 'fav' && (c.me === kind || (kind === 'like' && c.me === 'super')));
+    cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write, prev: c.me });
     if (history.length > 20) history.shift();
-    api('/api/react', { id: c.id, kind }).catch(() => toast('Не сохранилось, проверьте интернет'));
-    if (kind === 'like') toast('❤️ В избранном');
-    if (kind === 'super') toast('🌟 Суперлайк: список /super');
+    if (write) api('/api/react', { id: c.id, kind }).catch(() => toast('Не сохранилось, проверьте интернет'));
+    if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : write ? '❤️ И вам нравится' : '❤️ Оставил');
+    else if (kind === 'like') toast('❤️ В избранном');
+    else if (kind === 'super') toast('🌟 Суперлайк: список /super');
     setTimeout(render, 220);
     if (cards.length < 5) load();
   }
@@ -247,7 +335,9 @@ export const APP_HTML = /* html */ `<!doctype html>
     if (!last) return;
     sent.delete(last.card.id); judged = Math.max(0, judged - 1);
     cards.unshift(last.card);
-    api('/api/undo', { id: last.card.id }).catch(() => toast('Не удалось вернуть'));
+    if (last.write !== false) {
+      (last.prev ? api('/api/react', { id: last.card.id, kind: last.prev }) : api('/api/undo', { id: last.card.id })).catch(() => toast('Не удалось вернуть'));
+    }
     if (last.kind === 'hide') toast('Вернул. Пост в чате уже удалён, но карточка снова здесь');
     render();
   }
