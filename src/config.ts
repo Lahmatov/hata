@@ -48,7 +48,8 @@ export const config = {
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN ?? '',
     // One or more recipients, comma-separated (each person must press Start in the bot first).
-    chatIds: (process.env.TELEGRAM_CHAT_ID ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    // Any separator works: "1,2", "1, 2", "1 2", "1;2" or one per line.
+    chatIds: (process.env.TELEGRAM_CHAT_ID ?? '').split(/[^-\w@]+/).filter(Boolean),
     maxItemsPerMessage: 15,
     maxManualItems: Number(process.env.MAX_MANUAL_ITEMS ?? Infinity), // "check manually": all by default
   },
