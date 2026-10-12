@@ -1,0 +1,9 @@
+# Deployed by .github/workflows/bot-worker.yml (the KV id is filled in there).
+name = "hata-bot"
+main = "index.ts"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "KV"
+id = "__KV_ID__"

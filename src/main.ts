@@ -11,6 +11,7 @@ import { log } from './log.ts';
 import { summarize } from './summarize.ts';
 import { buildPosts, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
 import { favouritesText, processUpdates } from './bot.ts';
+import { pushCatalogue, workerEnabled } from './worker-sync.ts';
 import { dealNote, historyNote, routeUrl } from './extras.ts';
 import { BlockedError, type Listing, type RawListing } from './types.ts';
 
@@ -209,6 +210,7 @@ async function main() {
   if (!items.length && slot !== 'morning' && !DRY && !flag('force')) {
     store.recordRun(runKey, 0, failed);
     log.info(`nothing new for the ${slot} digest; not sending`);
+    if (workerEnabled()) await pushCatalogue(store).catch((e) => log.warn(e.message));
     return;
   }
   const label = { morning: 'утро', day: 'день', evening: 'вечер' }[slot];
@@ -228,6 +230,7 @@ async function main() {
   for (const it of items) for (const m of it.members) store.markNotified(m.id, m.price);
   store.recordRun(runKey, items.length, failed);
   log.info(`sent ${posts.length} message(s)`);
+  if (workerEnabled()) await pushCatalogue(store).catch((e) => log.warn(e.message));
 }
 
 if (flag('telegram-chat-id')) {

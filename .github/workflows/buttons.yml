@@ -1,5 +1,6 @@
 name: telegram-buttons
-# Every 5 min (GitHub may delay it): apply 👍/👎 presses and answer ⭐ Избранное (no scraping, ~30 s).
+# Copies 👍/👎 presses into the database. With the Cloudflare bot worker the buttons are answered there
+# instantly and this only syncs; without it, this job polls Telegram (GitHub may delay it).
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -27,6 +28,16 @@ jobs:
           path: data/hata.sqlite
           key: hata-state-${{ github.run_id }}
           restore-keys: hata-state-
+      - name: Find the bot worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+            sub=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')
+            [ -n "$sub" ] && echo "WORKER_URL=https://hata-bot.$sub.workers.dev" >> "$GITHUB_ENV"
+          fi
+          true
       - name: Apply button presses
         if: steps.restore.outputs.cache-matched-key != ''
         env:

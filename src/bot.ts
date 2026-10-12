@@ -3,6 +3,7 @@ import type { Store } from './db.ts';
 import type { Listing } from './types.ts';
 import { log } from './log.ts';
 import { esc } from './telegram.ts';
+import { pullReactions, workerEnabled } from './worker-sync.ts';
 
 // Telegram buttons under each flat: 👍 interesting / 👎 hide, plus the "⭐ Избранное" command. The bot is not
 // a server: presses and messages wait in Telegram (up to 24 h) and are collected by getUpdates on each run
@@ -81,6 +82,10 @@ async function api<T>(method: string, payload: Record<string, unknown>): Promise
 /** Applies pending 👍/👎 presses and answers commands. Returns how many updates were handled. */
 export async function processUpdates(store: Store): Promise<number> {
   if (!config.telegram.token) return 0;
+  // With the Cloudflare worker, Telegram delivers presses to it instantly: just copy them here.
+  if (workerEnabled()) {
+    try { return await pullReactions(store); } catch (e) { log.warn(`${(e as Error).message}; falling back to getUpdates`); }
+  }
   if (store.kvGet<number>('tg:commands') !== 1) {
     await api('setMyCommands', { commands: [{ command: 'fav', description: 'Избранное' }, { command: 'help', description: 'Как пользоваться' }] });
     store.kvSet('tg:commands', 1);
