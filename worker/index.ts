@@ -82,9 +82,18 @@ export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string;
   return [...byPair.values()];
 }
 
-export async function setReaction(kv: KV, kind: Kind | null, chat: string, gid: string) {
+export async function setReaction(kv: KV, kind: Kind | null, chat: string, gid: string, retryMs = 1100) {
   // kind null = taken back: an empty marker (still one write) hides any older r: key for the pair.
-  await kv.put(vKey(chat, gid), '1', { metadata: kind ? { kind, at: new Date().toISOString() } : {} });
+  const metadata = kind ? { kind, at: new Date().toISOString() } : {};
+  // KV allows one write per key per second: a swipe followed by a quick undo can get a 429, so wait and retry.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await kv.put(vKey(chat, gid), '1', { metadata });
+    } catch (e) {
+      if (attempt >= 2) throw e;
+      await new Promise((r) => setTimeout(r, retryMs));
+    }
+  }
 }
 
 /** 👍 (or 🌟) flats still on sale (seen by the monitor in the last 3 days), closest to school first. */

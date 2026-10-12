@@ -27,6 +27,17 @@ test.describe('telegram worker', () => {
     expect(rs).toEqual([['like', '1', 'imovirtual:ID1'], ['like', '2', 'casasapo:abc']]);
   });
 
+  test('a rejected KV write (same key within a second) is retried', async () => {
+    const kv = memKV();
+    const put = kv.put.bind(kv);
+    let fails = 1;
+    kv.put = async (k, v, o) => { if (fails-- > 0) throw new Error('KV PUT failed: 429 Too Many Requests'); return put(k, v, o); };
+    await setReaction(kv, 'like', '1', 'g1', 1);
+    expect((await listReactions(kv)).map((r) => r.kind)).toEqual(['like']);
+    fails = 5;
+    await expect(setReaction(kv, null, '1', 'g1', 1)).rejects.toThrow('429');
+  });
+
   test('favourites: on sale only, closest first', () => {
     const now = Date.parse('2026-10-12T12:00:00Z');
     const cat: Catalogue = {
