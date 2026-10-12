@@ -53,7 +53,7 @@ export function buildCatalogue(store: Store): { catalogue: Catalogue; cards: Rec
       c: l.commute_min, s: l.last_seen, m: store.messages(l.group_id).map((x) => [x.chatId, x.messageId]), k: c.verdict, n,
     };
     (cards[n] ??= {})[gid] = {
-      h: l.title, b: l.bedrooms, i: (l.images ?? (l.image ? [l.image] : [])).slice(0, 15),
+      h: l.title, b: l.bedrooms, i: (l.images ?? (l.image ? [l.image] : [])).slice(0, 60),
       f: factsLine(l), x: ruleBasedProsCons(l), w: c.verdict === 'manual' ? c.reasons : [], r: routeUrl(l, school),
     };
   }

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       args:
-        description: 'Extra args: --force (send now), --dry-run, --test-telegram, --clear-chat (wipe bot chat, resend all next time), --only=imovirtual'
+        description: 'Extra args: --force (send now), --photo-backfill=700 (read all listing pages for photos, ~1.5 h), --dry-run, --test-telegram, --clear-chat (wipe bot chat, resend all next time), --only=imovirtual'
         required: false
         default: '--force'
 concurrency:
