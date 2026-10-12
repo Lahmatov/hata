@@ -48,6 +48,7 @@ jobs:
           IDEALISTA_API_SECRET: ${{ secrets.IDEALISTA_API_SECRET }}
           IMAP_USER: ${{ secrets.IMAP_USER }}
           IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          IMAP_FOLDER: ${{ secrets.IMAP_FOLDER || 'INBOX' }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             npx tsx src/main.ts --lisbon-hours=7,13,19
