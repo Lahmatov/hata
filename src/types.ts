@@ -26,6 +26,8 @@ export interface RawListing {
   image?: string | null;
   /** All photo URLs, when the source gives them (swipe app). */
   images?: string[] | null;
+  /** Alert e-mails only: date of the newest e-mail that mentioned the flat (freshness). */
+  emailed_at?: string | null;
 }
 
 export interface Listing extends RawListing {
