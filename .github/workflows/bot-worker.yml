@@ -79,7 +79,7 @@ jobs:
           curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" -H 'Content-Type: application/json' \
             -d "{\"url\":\"$URL/telegram\",\"secret_token\":\"$secret\",\"allowed_updates\":[\"callback_query\",\"message\"]}" | jq -c .
           curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" -H 'Content-Type: application/json' \
-            -d '{"commands":[{"command":"app","description":"Свайпы: квартиры карточками"},{"command":"fav","description":"Избранное"},{"command":"super","description":"Суперлайки"},{"command":"help","description":"Как пользоваться"}]}' | jq -c .
+            -d '{"commands":[{"command":"app","description":"Свайпы: квартиры карточками"},{"command":"fav","description":"Избранное"},{"command":"super","description":"Суперлайки"},{"command":"export","description":"Таблица избранного (Excel)"},{"command":"help","description":"Как пользоваться"}]}' | jq -c .
           # Menu button next to the input field opens the swipe app (Telegram Mini App).
           curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setChatMenuButton" -H 'Content-Type: application/json' \
             -d "{\"menu_button\":{\"type\":\"web_app\",\"text\":\"🏠 Свайпы\",\"web_app\":{\"url\":\"$URL/app\"}}}" | jq -c .

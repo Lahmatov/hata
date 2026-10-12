@@ -6,7 +6,11 @@ import { log } from './log.ts';
 import { classify } from './filter.ts';
 import { routeUrl } from './extras.ts';
 import { factsLine, ruleBasedProsCons } from './summarize.ts';
+import { score } from './score.ts';
+import { tableRow } from './table.ts';
+import { featuresFromText, featuresList } from './adapters/text.ts';
 import type { CardDetails, Catalogue } from '../worker/index.ts';
+import type { TableCell } from '../worker/xlsx.ts';
 
 // Link to the Cloudflare Worker that answers the Telegram buttons (worker/index.ts). WORKER_URL is set by
 // the workflows when Cloudflare is configured; without it the bot falls back to getUpdates polling.
@@ -34,30 +38,41 @@ export async function pullReactions(store: Store): Promise<number> {
   return rs.length;
 }
 
-/** Flats we have sent (one per duplicate group): a small index plus swipe-card details in chunks of 40. */
-export function buildCatalogue(store: Store): { catalogue: Catalogue; cards: Record<string, CardDetails>[] } {
+/**
+ * Flats we have sent (one per duplicate group): a small index, swipe-card details in chunks of 40, and the
+ * spreadsheet rows for /export (chunks of 40 too, same numbering, so the worker reads only what it needs).
+ */
+export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Catalogue; cards: Record<string, CardDetails>[]; rows: Record<string, TableCell[]>[] } {
+  const all = store.all();
   const leaders = new Map<string, Listing>();
-  for (const l of store.all()) {
+  for (const l of all) {
     if (store.notifiedPrice(l.id) === null) continue;
     const cur = leaders.get(l.group_id);
     if (!cur || cur.last_seen <= l.last_seen) leaders.set(l.group_id, l);
   }
+  const pool = all.filter((l) => now - Date.parse(l.last_seen) < 60 * 86400_000);
   const school = config.school.lat !== null && config.school.lon !== null ? { lat: config.school.lat, lon: config.school.lon } : null;
   const catalogue: Catalogue = {};
   const cards: Record<string, CardDetails>[] = [];
+  const rows: Record<string, TableCell[]>[] = [];
   for (const [gid, l] of leaders) {
     const n = Math.floor(Object.keys(catalogue).length / 40);
     const c = classify(l);
+    const f = featuresFromText(l.description);
+    const s = score(l, pool, f);
     catalogue[gid] = {
       t: [l.neighborhood, l.municipality].filter(Boolean).join(', ') || l.title, u: l.url, p: l.price, a: l.area_m2,
-      c: l.commute_min, s: l.last_seen, m: store.messages(l.group_id).map((x) => [x.chatId, x.messageId]), k: c.verdict, n,
+      c: l.commute_min, s: l.last_seen, m: store.messages(l.group_id).map((x) => [x.chatId, x.messageId]), k: c.verdict, n, q: s.total,
     };
     (cards[n] ??= {})[gid] = {
       h: l.title, b: l.bedrooms, i: (l.images ?? (l.image ? [l.image] : [])).slice(0, 60),
       f: factsLine(l), x: ruleBasedProsCons(l), w: c.verdict === 'manual' ? c.reasons : [], r: routeUrl(l, school),
+      y: s.text, e: featuresList(f),
     };
+    const members = all.filter((m) => m.group_id === gid && now - Date.parse(m.last_seen) < 7 * 86400_000);
+    (rows[n] ??= {})[gid] = tableRow(l, c, s, { members, prices: store.priceHistory(l.id), school, now });
   }
-  return { catalogue, cards };
+  return { catalogue, cards, rows };
 }
 
 /**
@@ -66,7 +81,7 @@ export function buildCatalogue(store: Store): { catalogue: Catalogue; cards: Rec
  */
 export async function pushCatalogue(store: Store): Promise<void> {
   const reactions = (['like', 'hide', 'super'] as const).flatMap((kind) => store.reactionRows(kind).map((r) => ({ kind, ...r })));
-  const { catalogue, cards } = buildCatalogue(store);
+  const { catalogue, cards, rows } = buildCatalogue(store);
   const token = process.env.CLOUDFLARE_API_TOKEN;
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (token && account) {
@@ -75,7 +90,9 @@ export async function pushCatalogue(store: Store): Promise<void> {
     const list = (await (await fetch(`${api}?per_page=100`, { headers: auth })).json()) as { result?: { id: string; title: string }[] };
     const ns = list.result?.find((x) => x.title === 'hata-bot')?.id;
     if (!ns) throw new Error('worker KV namespace "hata-bot" not found (deploy the bot worker first)');
-    const pairs = [{ key: 'catalogue', value: JSON.stringify(catalogue) }, ...cards.map((v, n) => ({ key: `cards:${n}`, value: JSON.stringify(v) }))];
+    const pairs = [{ key: 'catalogue', value: JSON.stringify(catalogue) },
+      ...cards.map((v, n) => ({ key: `cards:${n}`, value: JSON.stringify(v) })),
+      ...rows.map((v, n) => ({ key: `rows:${n}`, value: JSON.stringify(v) }))];
     const res = await fetch(`${api}/${ns}/bulk`, { method: 'PUT', headers: auth, body: JSON.stringify(pairs) });
     if (!res.ok) throw new Error(`KV bulk write: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
     const r = await call<{ added: number }>('/sync', { reactions });

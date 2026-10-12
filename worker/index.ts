@@ -4,6 +4,8 @@
 // Free-tier friendly: one KV write per press, one per digest.
 
 import { APP_HTML } from './app.ts';
+import { TABLE_COLS } from './table.ts';
+import { xlsx, type TableCell, type TableCol } from './xlsx.ts';
 
 export interface KV {
   get(key: string, type: 'json'): Promise<unknown>;
@@ -15,22 +17,28 @@ export interface Env { KV: KV; TELEGRAM_BOT_TOKEN: string; TELEGRAM_CHAT_ID: str
 
 /**
  * One flat as pushed by the monitor (key 'catalogue', small: no photos): place, url, price, area, commute,
- * last seen, posts [chat, message], verdict, and n = the 'cards:<n>' chunk holding its swipe-card details.
+ * last seen, posts [chat, message], verdict, n = the 'cards:<n>' / 'rows:<n>' chunk holding its swipe-card
+ * details and spreadsheet row, q = rating 0-100 (src/score.ts).
  */
 export interface CatalogueItem {
   t: string; u: string; p: number | null; a: number | null; c: number | null; s: string; m: [string, number][];
-  k?: string; n?: number;
+  k?: string; n?: number; q?: number;
 }
 export type Catalogue = Record<string, CatalogueItem>;
-/** Swipe-card details (keys 'cards:<n>', ~40 flats each): title, bedrooms, photos, facts, plus/minus, unknowns, route. */
-export interface CardDetails { h?: string; b?: number | null; i?: string[]; f?: string; x?: string; w?: string[]; r?: string | null }
+/**
+ * Swipe-card details (keys 'cards:<n>', ~40 flats each): title, bedrooms, photos, facts, plus/minus, unknowns,
+ * route, rating breakdown, extras found in the ad text.
+ */
+export interface CardDetails { h?: string; b?: number | null; i?: string[]; f?: string; x?: string; w?: string[]; r?: string | null; y?: string; e?: string[] }
 // Free plan: 10 ms CPU per request, so the deck never parses all photos at once, only the chunks it shows.
 type Kind = 'like' | 'hide' | 'super';
 
 const FAV_BUTTON = '⭐ Избранное';
 const SUPER_BUTTON = '🌟 Суперлайки';
-const replyKeyboard = { keyboard: [[{ text: FAV_BUTTON }, { text: SUPER_BUTTON }]], resize_keyboard: true, is_persistent: true };
-const HELP = `Я присылаю квартиры три раза в день.\n👍 под квартирой: добавить в избранное, 👎: убрать квартиру из чата у обоих.\n🌟 под квартирой: суперлайк, отдельный список ${SUPER_BUTTON} (кнопка внизу или /super).\n${FAV_BUTTON} (кнопка внизу или /fav): список избранного.\n🏠 Свайпы (кнопка меню слева от поля ввода или /app): все квартиры карточками с фото, вправо нравится, вверх суперлайк, влево нет.`;
+const TABLE_BUTTON = '📊 Таблица';
+const replyKeyboard = { keyboard: [[{ text: FAV_BUTTON }, { text: SUPER_BUTTON }, { text: TABLE_BUTTON }]], resize_keyboard: true, is_persistent: true };
+const HELP = `Я присылаю квартиры три раза в день.\n👍 под квартирой: добавить в избранное, 👎: убрать квартиру из чата у обоих.\n🌟 под квартирой: суперлайк, отдельный список ${SUPER_BUTTON} (кнопка внизу или /super).\n${FAV_BUTTON} (кнопка внизу или /fav): список избранного.\n🏠 Свайпы (кнопка меню слева от поля ввода или /app): все квартиры карточками с фото, вправо нравится, вверх суперлайк, влево нет. Вкладки «⭐ Избранное» (второй раунд по лайкам) и «🏆 Рейтинг» (по баллам).
+${TABLE_BUTTON} (кнопка внизу или /export): всё избранное обоих в таблице Excel со всеми параметрами и рейтингом.`;
 
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -128,6 +136,71 @@ function chunks(text: string, max = 3800): string[] {
   return cur ? [...out, cur] : out;
 }
 
+/** First names of the recipients (Telegram getChat), for "who liked it"; falls back to the chat id. */
+async function names(env: Env): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  await Promise.all(chatIds(env).map(async (id) => {
+    try {
+      const r = (await (await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChat?chat_id=${encodeURIComponent(id)}`)).json()) as { result?: { first_name?: string; title?: string } };
+      out[id] = r.result?.first_name ?? r.result?.title ?? id;
+    } catch { out[id] = id; }
+  }));
+  return out;
+}
+
+const KIND_RU: Record<Kind, string> = { super: '🌟 супер', like: '👍 да', hide: '👎 нет' };
+
+/**
+ * The favourites spreadsheet: every flat on sale that someone 👍/🌟, best rating first, with each person's
+ * verdict in front of the monitor's columns (worker/table.ts).
+ */
+export async function favouritesTable(kv: KV, people: Record<string, string>, now = Date.now()): Promise<{ cols: TableCol[]; rows: TableCell[][] }> {
+  const cat = ((await kv.get('catalogue', 'json')) ?? {}) as Catalogue;
+  const reactions = await listReactions(kv);
+  const liked = new Set(reactions.filter((r) => r.kind !== 'hide').map((r) => r.gid));
+  const items = [...liked].map((id) => ({ id, x: cat[id] }))
+    .filter((it): it is { id: string; x: CatalogueItem } => Boolean(it.x) && now - Date.parse(it.x.s) < 3 * 86400_000)
+    .sort((a, b) => (b.x.q ?? 0) - (a.x.q ?? 0) || (a.x.c ?? 99) - (b.x.c ?? 99));
+  const chunks = new Map<number, Record<string, TableCell[]>>();
+  for (const n of new Set(items.map((it) => it.x.n).filter((n): n is number => n !== undefined))) {
+    chunks.set(n, ((await kv.get(`rows:${n}`, 'json')) ?? {}) as Record<string, TableCell[]>);
+  }
+  const who = Object.keys(people);
+  const cols: TableCol[] = [{ h: '№', w: 4, f: 'int' }, ...who.map((id) => ({ h: people[id], w: 9 })), ...TABLE_COLS];
+  const rows = items.map((it, i) => {
+    const mine = (id: string) => reactions.find((r) => r.gid === it.id && r.chat === id)?.kind;
+    const row = (it.x.n !== undefined ? chunks.get(it.x.n)?.[it.id] : undefined) ?? basicRow(it.x);
+    return [i + 1, ...who.map((id) => { const k = mine(id); return k ? KIND_RU[k] : '—'; }), ...row];
+  });
+  return { cols, rows };
+}
+
+/** Flats pushed before the spreadsheet existed: the basics from the catalogue. */
+function basicRow(x: CatalogueItem): TableCell[] {
+  const v: Record<string, TableCell> = {
+    'Баллы из 100': x.q ?? null, Район: x.t, Цена: x.p, 'Площадь, м²': x.a, 'До школы, мин': x.c === null ? null : Math.round(x.c),
+    Объявление: { u: x.u, t: 'открыть' },
+  };
+  return TABLE_COLS.map((c) => v[c.h] ?? null);
+}
+
+/** Sends the favourites spreadsheet to one chat as an .xlsx document. */
+export async function sendTable(env: Env, chat: string): Promise<number> {
+  const { cols, rows } = await favouritesTable(env.KV, await names(env));
+  if (!rows.length) {
+    await tg(env, 'sendMessage', { chat_id: chat, text: '📊 В избранном пока пусто: лайкайте квартиры 👍 / 🌟 или свайпайте вправо.', reply_markup: replyKeyboard });
+    return 0;
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const form = new FormData();
+  form.append('chat_id', chat);
+  form.append('caption', `📊 Избранное: ${rows.length} кв., лучшие по баллам сверху. Колонки «Позвонили», «Просмотр», «Впечатление» и «Заметки» для вас.`);
+  form.append('document', new Blob([xlsx('Избранное', cols, rows)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `hata-izbrannoe-${day}.xlsx`);
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`sendDocument: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return rows.length;
+}
+
 interface Update {
   callback_query?: { id: string; data?: string; message?: { message_id: number; chat: { id: number } } };
   message?: { text?: string; chat: { id: number } };
@@ -135,13 +208,14 @@ interface Update {
 
 /**
  * Records 👍/👎 and updates the posts: 👍 marks the post(s) in this chat, 👎 deletes the flat's posts in every
- * recipient's chat (falls back to marking them hidden when Telegram refuses).
+ * recipient's chat (falls back to marking them hidden when Telegram refuses). mineOnly: 👎 in the favourites
+ * round, where the other person may still like the flat, so only this chat's post goes.
  */
-export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number) {
+export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number, mineOnly = false) {
   await setReaction(env.KV, kind, chat, gid);
   const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
   const posts = new Map<string, [string, number]>();
-  for (const [c, id] of cat[gid]?.m ?? []) if (kind === 'hide' || c === chat) posts.set(`${c}:${id}`, [c, id]);
+  for (const [c, id] of cat[gid]?.m ?? []) if ((kind === 'hide' && !mineOnly) || c === chat) posts.set(`${c}:${id}`, [c, id]);
   if (pressedMessageId) posts.set(`${chat}:${pressedMessageId}`, [chat, pressedMessageId]);
   for (const [c, id] of posts.values()) {
     if (kind !== 'hide' || !(await tg(env, 'deleteMessage', { chat_id: c, message_id: id }))) {
@@ -169,6 +243,15 @@ export async function handleUpdate(env: Env, u: Update): Promise<void> {
   if (/^\/app|свайп/.test(t)) {
     await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '🏠 Квартиры карточками: вправо нравится, влево нет.',
       reply_markup: { inline_keyboard: [[{ text: '🏠 Открыть свайпы', web_app: { url: `${env.APP_URL ?? ''}/app` } }]] } });
+    return;
+  }
+  if (/^\/export|таблиц|^📊/.test(t)) {
+    try {
+      await sendTable(env, String(msg.chat.id));
+    } catch (e) {
+      console.error(e);
+      await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '📊 Не получилось собрать таблицу, попробуйте ещё раз через минуту.', reply_markup: replyKeyboard });
+    }
     return;
   }
   let text = HELP;
@@ -202,7 +285,8 @@ export async function verifyInitData(initData: string, token: string, maxAgeSec 
   try { return String((JSON.parse(params.get('user') ?? '{}') as { id?: number }).id ?? '') || null; } catch { return null; }
 }
 
-export type Card = CatalogueItem & CardDetails & { id: string };
+/** me / ot: this user's and the other person's reaction (favourites mode). */
+export type Card = CatalogueItem & CardDetails & { id: string; me?: Kind; ot?: Kind };
 
 /**
  * The cards this user has not judged yet: on sale, not hidden by anyone, not already 👍/👎 by this user.
@@ -218,25 +302,49 @@ export function deck(cat: Catalogue, reactions: { kind: Kind; chat: string; gid:
     .sort((a, b) => rank(a.k) - rank(b.k) || (a.c ?? 99) - (b.c ?? 99));
 }
 
+/**
+ * Favourites (second round): flats on sale that either of you 👍/🌟 and this user has not 👎, best rating
+ * first. Each card says who liked it, so the other person's picks get a second look too.
+ */
+export function favDeck(cat: Catalogue, reactions: { kind: Kind; chat: string; gid: string }[], user: string, now = Date.now()): Card[] {
+  const byGid = new Map<string, { me?: Kind; ot?: Kind }>();
+  const rank = { super: 2, like: 1, hide: 0 };
+  for (const r of reactions) {
+    const v = byGid.get(r.gid) ?? {};
+    if (r.chat === user) v.me = r.kind;
+    else if (!v.ot || rank[r.kind] > rank[v.ot]) v.ot = r.kind;
+    byGid.set(r.gid, v);
+  }
+  return [...byGid]
+    .filter(([id, v]) => cat[id] && v.me !== 'hide' && (v.me || v.ot !== 'hide') && now - Date.parse(cat[id].s) < 3 * 86400_000)
+    .map(([id, v]) => ({ ...cat[id], id, m: [], me: v.me, ot: v.ot }))
+    .sort((a, b) => (b.q ?? 0) - (a.q ?? 0) || (a.c ?? 99) - (b.c ?? 99));
+}
+
 async function appApi(req: Request, env: Env, path: string): Promise<Response> {
-  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind };
+  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean };
   const user = await verifyInitData(body.initData ?? '', env.TELEGRAM_BOT_TOKEN);
   if (!user || !chatIds(env).includes(user)) return json({ error: 'not allowed' }, 403);
   if (path === '/api/deck') {
     const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
     const exclude = new Set(body.exclude ?? []);
-    const all = deck(cat, await listReactions(env.KV), user).filter((c) => !exclude.has(c.id));
+    const fav = body.mode === 'fav';
+    const all = (fav ? favDeck : deck)(cat, await listReactions(env.KV), user).filter((c) => !exclude.has(c.id));
+    if (fav && body.slim) return json({ total: all.length, cards: all, names: await names(env) });
+    const at = body.first ? all.findIndex((c) => c.id === body.first) : -1;
+    if (at > 0) all.unshift(...all.splice(at, 1));
     const page = all.slice(0, 20);
     const chunks = new Map<number, Record<string, CardDetails>>();
     for (const n of new Set(page.map((c) => c.n).filter((n): n is number => n !== undefined))) {
       chunks.set(n, ((await env.KV.get(`cards:${n}`, 'json')) ?? {}) as Record<string, CardDetails>);
     }
     const cards = page.map((c) => ({ ...c, ...(c.n !== undefined ? chunks.get(c.n)?.[c.id] : undefined) }));
-    return json({ total: all.length, cards });
+    return json({ total: all.length, cards, names: fav ? await names(env) : undefined });
   }
+  if (path === '/api/export') return json({ ok: true, rows: await sendTable(env, user) });
   if (!body.id) return json({ error: 'no id' }, 400);
   if (path === '/api/react' && (body.kind === 'like' || body.kind === 'hide' || body.kind === 'super')) {
-    await applyReaction(env, body.kind, user, body.id);
+    await applyReaction(env, body.kind, user, body.id, undefined, body.mine === true);
     return json({ ok: true });
   }
   if (path === '/api/undo') {
