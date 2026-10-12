@@ -74,3 +74,8 @@ test('Sintra and Mem Martins are in the area; 30 min is allowed but flagged', as
   const { ruleBasedProsCons } = await import('../src/summarize.ts');
   expect(ruleBasedProsCons(mk({ commute_min: 30 }))).toContain('дорога 30 мин');
 });
+
+test('houses from alerts are rejected, apartments with "casas de banho" are not', () => {
+  expect(classify(mk({ title: 'Moradia T3 em Belas' })).verdict).toBe('reject');
+  expect(classify(mk({ title: 'Apartamento T3 com 2 casas de banho' })).verdict).toBe('match');
+});

@@ -16,6 +16,9 @@ export function classify(l: Listing): Classified {
   if (locationUnknown(l.municipality, l.neighborhood, l.address)) unknown.push('район');
   else if (!inTargetArea(l.municipality, l.neighborhood, l.address, l.title)) reject.push('outside target area');
 
+  // Apartments only: alerts and aggregators also send houses.
+  if (/\b(moradia|vivenda|quinta|herdade|terreno|loja|armaz[eé]m)\b/i.test(l.title)) reject.push('not an apartment');
+
   if (l.bedrooms === null) unknown.push('число спален');
   else if (l.bedrooms !== c.bedrooms) reject.push(`T${l.bedrooms}`);
 
