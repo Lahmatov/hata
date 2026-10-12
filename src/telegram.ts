@@ -126,7 +126,7 @@ export async function clearChats(pauseMs = 300): Promise<number> {
     try {
       const marker = await call(token, 'sendMessage', { chat_id: chatId, text: '🧹 Чищу историю…' });
       const top = marker?.message_id ?? 0;
-      let failed = 0;
+      const refused = new Map<string, number>(); // Telegram's reason → batches
       for (let from = Math.max(1, top - CLEAR_WINDOW + 1); from <= top; from += 100) {
         const ids = Array.from({ length: Math.min(100, top - from + 1) }, (_, i) => from + i);
         try {
@@ -134,12 +134,14 @@ export async function clearChats(pauseMs = 300): Promise<number> {
         } catch (e) {
           // Batches of only missing or too old ids are refused; the batch with the fresh marker must not be.
           if (ids.includes(top)) throw e;
-          failed++;
+          const reason = (e as Error).message;
+          refused.set(reason, (refused.get(reason) ?? 0) + 1);
         }
         await new Promise((r) => setTimeout(r, pauseMs));
       }
       cleared++;
-      log.info(`telegram: chat ${n + 1}/${chatIds.length} cleared up to message ${top} (${failed} batch(es) had nothing deletable)`);
+      const why = [...refused].map(([r, k]) => `${k}× ${r}`).join('; ');
+      log.info(`telegram: chat ${n + 1}/${chatIds.length} cleared up to message ${top}${why ? `; refused batches: ${why}` : ''}`);
     } catch (e) {
       log.warn(`telegram: chat ${n + 1}/${chatIds.length} not cleared: ${(e as Error).message}`);
     }
