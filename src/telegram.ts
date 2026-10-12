@@ -80,7 +80,7 @@ export async function sendPost(post: Post): Promise<void> {
   const errors: string[] = [];
   const markup = post.item ? { reply_markup: keyboard(post.item.leader.group_id) } : {};
   const asText = { text: post.text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...markup };
-  for (const chatId of chatIds) {
+  for (const [i, chatId] of chatIds.entries()) {
     try {
       if (post.photo) {
         try {
@@ -93,7 +93,8 @@ export async function sendPost(post: Post): Promise<void> {
         await call(token, 'sendMessage', { chat_id: chatId, ...asText });
       }
     } catch (e) {
-      errors.push(`${chatId}: ${(e as Error).message}`);
+      // The position, not only the id: GitHub masks the id when it equals the whole secret.
+      errors.push(`recipient ${i + 1} of ${chatIds.length} (${chatId}): ${(e as Error).message}`);
     }
   }
   if (errors.length === chatIds.length) throw new Error(errors.join('; '));
