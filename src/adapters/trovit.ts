@@ -1,0 +1,82 @@
+import * as cheerio from 'cheerio';
+import type { Adapter, RawListing } from '../types.ts';
+import { bedroomsFromT, factsFromText } from './text.ts';
+
+// Trovit is a public aggregator (it also indexes listings from portals we can't read directly).
+// We only read its own result pages; outgoing links are kept as-is and never followed.
+const BASE = 'https://casa.trovit.pt';
+const SEARCHES = ['/t3-municipio-amadora', '/t3-municipio-oeiras', '/t3-municipio-sintra', '/t3-municipio-odivelas', '/t3-benfica-lisboa',
+  '/t4-municipio-amadora', '/t4-municipio-oeiras', '/t4-municipio-sintra'];
+
+/** Links go through a click tracker whose params change on every page view; keep the stable detail page. */
+export function stableLink(href: string): { url: string; id: string } {
+  const u = new URL(href, BASE);
+  const detail = u.searchParams.get('detailPageUrl');
+  const adId = u.searchParams.get('adId') ?? detail?.match(/detail\/([^?]+)/)?.[1] ?? null;
+  const clean = detail ? new URL(detail).origin + new URL(detail).pathname : `${u.origin}${u.pathname}`;
+  return { url: clean, id: adId ?? clean };
+}
+
+const num = (s: string | undefined) => {
+  const n = Number((s ?? '').replace(/[^\d,]/g, '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+export const trovit: Adapter = {
+  id: 'trovit',
+  name: 'Trovit',
+  maxPages: 3, // 30 per page
+
+  searchUrls: () => SEARCHES.map((p) => `${BASE}${p}`),
+
+  nextPageUrl(_body, url, pageNo) {
+    return `${url.replace(/\/\d+$/, '')}/${pageNo + 1}`;
+  },
+
+  parse(body, pageUrl) {
+    const $ = cheerio.load(body);
+    // JSON-LD "about" lists the same 30 results in page order, with bedrooms/bathrooms.
+    const ld: { numberOfBedrooms?: number; numberOfBathroomsTotal?: number; description?: string; image?: string }[] = [];
+    $('script[type="application/ld+json"]').each((_, s) => {
+      try {
+        const j = JSON.parse($(s).text());
+        for (const x of Array.isArray(j) ? j : [j]) ld.push(...(x.about ?? []));
+      } catch { /* ignore */ }
+    });
+    const place = decodeURIComponent(pageUrl.split('/').filter(Boolean).find((p) => /^t\d-/.test(p)) ?? '').replace(/^t\d-(municipio-)?/, '').replace(/-/g, ' ');
+    return $('.snippet-listing').map((i, n): RawListing | null => {
+      const el = $(n);
+      const link = el.find('a[href]').filter((_, a) => !/javascript:|#$/.test($(a).attr('href') ?? '')).first();
+      const href = link.attr('href') ?? el.attr('data-url') ?? '';
+      if (!href) return null;
+      const title = el.find('.snippet-listing-content-header-title').first().text().replace(/\s+/g, ' ').trim()
+        || link.attr('title') || '';
+      const all = el.text().replace(/\s+/g, ' ');
+      const description = el.find('.snippet-listing-content-header-description').text().replace(/\s+/g, ' ').trim() || null;
+      const meta = ld[i] ?? {};
+      const facts = factsFromText(`${title} ${all} ${meta.description ?? ''}`);
+      const stable = stableLink(href);
+      return {
+        source: 'trovit',
+        sourceId: stable.id,
+        url: stable.url,
+        title,
+        price: num(all.match(/(\d{1,3}(?:[ . ]\d{3})+)\s?€/)?.[1]),
+        area_m2: num(all.match(/(\d{2,4}(?:[.,]\d+)?)\s?m²/)?.[1]),
+        bedrooms: meta.numberOfBedrooms ?? num(all.match(/(\d)\s+(?:quartos?|dorm)/i)?.[1]) ?? bedroomsFromT(`${title} ${description ?? ''}`),
+        bathrooms: meta.numberOfBathroomsTotal ?? num(all.match(/(\d)\s+(?:casas? de banho|wc|banhos?)/i)?.[1]) ?? facts.bathrooms,
+        garage: facts.garage,
+        floor: null,
+        elevator: facts.elevator,
+        condition: facts.condition,
+        neighborhood: place ? place.replace(/\b\w/g, (c) => c.toUpperCase()) : null,
+        municipality: /amadora/.test(pageUrl) ? 'Amadora' : /oeiras/.test(pageUrl) ? 'Oeiras' : /odivelas/.test(pageUrl) ? 'Odivelas' : /lisboa/.test(pageUrl) ? 'Lisboa' : 'Sintra',
+        address: null,
+        lat: null,
+        lon: null,
+        description: description ?? meta.description ?? null,
+        image: meta.image ?? el.find('img').first().attr('data-src') ?? el.find('img').first().attr('src') ?? null,
+      };
+    }).get().filter((l): l is RawListing => !!l && !/moradia|vivenda|terreno|loja/i.test(l.title));
+  },
+};

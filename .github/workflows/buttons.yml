@@ -1,0 +1,41 @@
+name: telegram-buttons
+# Every 15 min: apply 👍/👎 button presses from Telegram (no scraping, ~30 s).
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+concurrency:
+  group: hata-state # same as daily-digest: never two jobs on the database at once
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  buttons:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore state (SQLite)
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-state-${{ github.run_id }}
+          restore-keys: hata-state-
+      - name: Apply button presses
+        if: steps.restore.outputs.cache-matched-key != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: npx tsx src/main.ts --process-updates
+      - name: Save state
+        if: steps.restore.outputs.cache-matched-key != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-state-${{ github.run_id }}

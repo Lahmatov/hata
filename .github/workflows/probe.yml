@@ -1,0 +1,28 @@
+name: probe-sources
+# Step 0: plain-request accessibility check of every candidate source from a GitHub-hosted runner.
+# Manual only: Actions -> probe-sources -> Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      sample:
+        description: 'Also dump data structures (sample-source.mjs args, e.g. "imovirtual custojusto")'
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/probe-sources.mjs
+      - run: node scripts/inspect-html.mjs probe-output/*.html
+        if: always()
+      - run: cat probe-output/report.md >> "$GITHUB_STEP_SUMMARY"
+        if: always()
+      - run: node scripts/sample-source.mjs ${{ github.event.inputs.sample }}
+        if: github.event.inputs.sample != ''

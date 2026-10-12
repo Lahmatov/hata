@@ -1,0 +1,69 @@
+name: daily-digest
+# Three runs a day at about 07:05, 13:05 and 19:05 Lisbon time.
+# Cron is UTC and Lisbon switches between UTC+1 (summer) and UTC+0 (winter): each slot has two triggers
+# one hour apart, and the script only proceeds when the Lisbon hour is 7, 13 or 19 (the other one exits at once).
+# The morning run always reports; the 13h and 19h runs only post when there is something new.
+on:
+  schedule:
+    - cron: '5 6,7,12,13,18,19 * * *'
+  workflow_dispatch:
+    inputs:
+      args:
+        description: 'Extra args: --force (send now), --dry-run, --test-telegram, --only=imovirtual'
+        required: false
+        default: '--force'
+concurrency:
+  group: hata-state # shared with telegram-buttons: one job touches the database at a time
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore state (SQLite)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-state-${{ github.run_id }}
+          # First run: start from the dry-run database (listing pages already read, nothing marked as sent).
+          restore-keys: |
+            hata-state-
+            hata-dryrun-
+      - name: Run monitor
+        timeout-minutes: 130 # leave time to save the state even if the first (long) run is cut off
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          IDEALISTA_API_KEY: ${{ secrets.IDEALISTA_API_KEY }}
+          IDEALISTA_API_SECRET: ${{ secrets.IDEALISTA_API_SECRET }}
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          IMAP_FOLDER: ${{ secrets.IMAP_FOLDER || 'hata' }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx tsx src/main.ts --lisbon-hours=7,13,19
+          else
+            npx tsx src/main.ts ${{ github.event.inputs.args }}
+          fi
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/hata.sqlite
+          key: hata-state-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 7

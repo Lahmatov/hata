@@ -1,0 +1,35 @@
+{
+  "name": "hata",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Daily apartment-listing monitor for Greater Lisbon with a Telegram digest",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dry-run": "tsx src/main.ts --dry-run",
+    "seed": "tsx src/main.ts --seed",
+    "test-telegram": "tsx src/main.ts --test-telegram",
+    "test": "playwright test",
+    "typecheck": "tsc -p .",
+    "probe": "node scripts/probe-sources.mjs",
+    "fixtures:capture": "node scripts/capture-fixtures.mjs",
+    "telegram-chat-id": "tsx src/main.ts --telegram-chat-id"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "cheerio": "^1.2.0",
+    "imapflow": "^2.2.7",
+    "mailparser": "^3.9.36",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
