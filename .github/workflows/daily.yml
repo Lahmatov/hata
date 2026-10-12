@@ -37,6 +37,16 @@ jobs:
           restore-keys: |
             hata-state-
             hata-dryrun-
+      - name: Find the bot worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+            sub=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')
+            [ -n "$sub" ] && echo "WORKER_URL=https://hata-bot.$sub.workers.dev" >> "$GITHUB_ENV"
+          fi
+          true
       - name: Run monitor
         timeout-minutes: 130 # leave time to save the state even if the first (long) run is cut off
         env:

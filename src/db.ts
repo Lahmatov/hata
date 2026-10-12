@@ -122,6 +122,11 @@ export class Store {
     this.db.prepare('INSERT OR REPLACE INTO reactions VALUES (?, ?, ?, ?)').run(groupId, kind, chatId, new Date().toISOString());
   }
 
+  reactionRows(kind: 'like' | 'hide'): { chat: string; gid: string }[] {
+    return (this.db.prepare('SELECT chat_id, group_id FROM reactions WHERE kind = ?').all(kind) as { chat_id: string; group_id: string }[])
+      .map((r) => ({ chat: r.chat_id, gid: r.group_id }));
+  }
+
   reactions(kind: 'like' | 'hide'): Set<string> {
     return new Set((this.db.prepare('SELECT DISTINCT group_id FROM reactions WHERE kind = ?').all(kind) as { group_id: string }[]).map((r) => r.group_id));
   }

@@ -120,6 +120,19 @@ Imovirtual, официальный API Idealista (с ключом) и почто
 району среди T3 от 90 м²), 💶 история цены и ссылка «🗺 маршрут до школы».
 **Остановить:** Actions → daily-digest → ⋯ → Disable workflow.
 
+### Мгновенные кнопки (Cloudflare, бесплатно)
+Без своего сервера бот видит нажатия только при запусках на GitHub, поэтому кнопка «крутится». Маленький
+обработчик на Cloudflare Workers (`worker/`) отвечает сразу: 👍 отмечает, 👎 удаляет пост у обоих,
+«⭐ Избранное» присылает список за секунды. Монитор передаёт ему список отправленных квартир после
+каждой рассылки и забирает нажатия перед каждой.
+
+1. Зарегистрируйтесь на dash.cloudflare.com (Free).
+2. Account ID: Workers & Pages → справа «Account ID» (или в адресе страницы после `dash.cloudflare.com/`).
+3. API-токен: My Profile → API Tokens → Create Token → шаблон **Edit Cloudflare Workers** → Use template →
+   Account Resources: ваш аккаунт → Zone Resources: All zones → Continue → Create Token.
+4. Секреты GitHub: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`.
+5. Actions → **bot-worker** → Run workflow. Он создаст хранилище, выложит обработчик и подключит бота.
+
 ### Вариант B: launchd на Mac
 ```bash
 ./scripts/launchd/install.sh                          # 07:45, 13:45 и 19:45 по времени Mac
