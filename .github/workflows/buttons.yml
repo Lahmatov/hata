@@ -1,8 +1,8 @@
 name: telegram-buttons
-# Every 15 min: apply 👍/👎 button presses from Telegram (no scraping, ~30 s).
+# Every 5 min (GitHub may delay it): apply 👍/👎 presses and answer ⭐ Избранное (no scraping, ~30 s).
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 concurrency:
   group: hata-state # same as daily-digest: never two jobs on the database at once
