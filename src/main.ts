@@ -212,8 +212,10 @@ async function main() {
   for (const it of items) it.summary = summaries.get(it.leader.id) ?? '';
   // Sunday morning: list of flats marked 👍 that are still on sale.
   if (slot === 'morning' && new Date(`${today}T12:00:00Z`).getUTCDay() === 0 && !DRY) {
-    const text = favouritesText(store, 'Избранное за неделю');
-    if (text) await sendTelegram(text);
+    for (const [title, kind] of [['Суперлайки', 'super'], ['Избранное за неделю', 'like']] as const) {
+      const text = favouritesText(store, title, kind);
+      if (text) await sendTelegram(text);
+    }
   }
   if (!items.length && slot !== 'morning' && !DRY && !flag('force')) {
     store.recordRun(runKey, 0, failed);

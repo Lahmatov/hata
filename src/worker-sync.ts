@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { config } from './config.ts';
-import type { Store } from './db.ts';
+import type { Reaction, Store } from './db.ts';
 import type { Listing } from './types.ts';
 import { log } from './log.ts';
 import { classify } from './filter.ts';
@@ -28,7 +28,7 @@ export const workerEnabled = () => Boolean(process.env.WORKER_URL && config.tele
 
 /** Copies 👍/👎 presses recorded by the worker into the local database. */
 export async function pullReactions(store: Store): Promise<number> {
-  const rs = await call<{ kind: 'like' | 'hide'; chat: string; gid: string }[]>('/reactions');
+  const rs = await call<{ kind: Reaction; chat: string; gid: string }[]>('/reactions');
   for (const r of rs) store.setReaction(r.gid, r.kind, r.chat);
   log.info(`worker: ${rs.length} reaction(s)`);
   return rs.length;
@@ -65,7 +65,7 @@ export function buildCatalogue(store: Store): { catalogue: Catalogue; cards: Rec
  * megabytes of JSON), then lets the worker copy reactions recorded before it existed.
  */
 export async function pushCatalogue(store: Store): Promise<void> {
-  const reactions = (['like', 'hide'] as const).flatMap((kind) => store.reactionRows(kind).map((r) => ({ kind, ...r })));
+  const reactions = (['like', 'hide', 'super'] as const).flatMap((kind) => store.reactionRows(kind).map((r) => ({ kind, ...r })));
   const { catalogue, cards } = buildCatalogue(store);
   const token = process.env.CLOUDFLARE_API_TOKEN;
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;

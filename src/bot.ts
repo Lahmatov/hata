@@ -1,5 +1,5 @@
 import { config } from './config.ts';
-import type { Store } from './db.ts';
+import type { Reaction, Store } from './db.ts';
 import type { Listing } from './types.ts';
 import { log } from './log.ts';
 import { esc } from './telegram.ts';
@@ -13,9 +13,10 @@ const FAV_BUTTON = '⭐ Избранное';
 const replyKeyboard = { keyboard: [[{ text: FAV_BUTTON }]], resize_keyboard: true, is_persistent: true };
 const HELP = `Я присылаю квартиры три раза в день.\n👍 под квартирой: добавить в избранное, 👎: больше не показывать (для обоих).\n${FAV_BUTTON} (кнопка внизу или /fav): список избранного в любой момент.\nОтвечаю не сразу, а в течение 5–15 минут.`;
 
-export const keyboard = (groupId: string, chosen?: 'like' | 'hide') => ({
+export const keyboard = (groupId: string, chosen?: Reaction) => ({
   inline_keyboard: [[
     { text: chosen === 'like' ? '✅ Интересно' : '👍 Интересно', callback_data: `l|${groupId}`.slice(0, 64) },
+    { text: chosen === 'super' ? '🌟 Супер!' : '🌟', callback_data: `s|${groupId}`.slice(0, 64) },
     { text: chosen === 'hide' ? '🚫 Скрыто' : '👎 Скрыть', callback_data: `h|${groupId}`.slice(0, 64) },
   ]],
 });
@@ -26,9 +27,9 @@ interface Update {
   message?: { text?: string; chat: { id: number } };
 }
 
-/** Flats marked 👍 that are still on sale (seen in the last 3 days), as Telegram HTML; null when none. */
-export function favouritesText(store: Store, title = 'Избранное'): string | null {
-  const liked = store.reactions('like');
+/** Flats marked 👍 (or 🌟) that are still on sale (seen in the last 3 days), as Telegram HTML; null when none. */
+export function favouritesText(store: Store, title = 'Избранное', kind: 'like' | 'super' = 'like'): string | null {
+  const liked = store.reactions(kind);
   if (!liked.size) return null;
   const byGroup = new Map<string, Listing>();
   for (const l of store.all()) {
@@ -47,7 +48,7 @@ export function favouritesText(store: Store, title = 'Избранное'): stri
     return `${i + 1}. <a href="${esc(l.url)}">${esc(place || l.title)}</a> — ${esc(facts)}`;
   });
   const tail = gone ? `\n\n(ещё ${gone} из избранного уже сняты с продажи)` : '';
-  return `⭐ <b>${esc(title)}</b>: ${onSale.length}\n${lines.join('\n')}${tail}`;
+  return `${kind === 'super' ? '🌟' : '⭐'} <b>${esc(title)}</b>: ${onSale.length}\n${lines.join('\n')}${tail}`;
 }
 
 /** Telegram limits a message to 4096 characters: split on line breaks. */
@@ -105,14 +106,14 @@ export async function processUpdates(store: Store): Promise<number> {
       continue;
     }
     const q = u.callback_query;
-    const m = q?.data?.match(/^([lh])\|(.+)$/);
+    const m = q?.data?.match(/^([lhs])\|(.+)$/);
     if (!q || !m) continue;
-    const kind = m[1] === 'l' ? 'like' : 'hide';
+    const kind: Reaction = m[1] === 'l' ? 'like' : m[1] === 's' ? 'super' : 'hide';
     const chatId = String(q.message?.chat.id ?? '');
     store.setReaction(m[2], kind, chatId);
     n++;
     // Late answers are fine to try: they fail silently if the press is too old.
-    await api('answerCallbackQuery', { callback_query_id: q.id, text: kind === 'like' ? 'Отмечено 👍' : 'Больше не покажу' });
+    await api('answerCallbackQuery', { callback_query_id: q.id, text: kind === 'hide' ? 'Больше не покажу' : kind === 'super' ? 'Суперлайк 🌟' : 'Отмечено 👍' });
     if (kind === 'hide') {
       // 👎 removes the flat from every recipient's chat (posts we know of, plus the one pressed).
       const posts = store.messages(m[2]);

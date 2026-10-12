@@ -1,5 +1,5 @@
 // The swipe app page (Telegram Mini App), served by the worker at /app. Plain HTML/CSS/JS, no build step.
-// Cards come from /api/deck; a swipe right is 👍, left is 👎 (same reactions as the buttons under the posts).
+// Cards come from /api/deck; swipe right is 👍, up is 🌟 super like, left is 👎 (same reactions as the post buttons).
 
 export const APP_HTML = /* html */ `<!doctype html>
 <html lang="ru">
@@ -15,7 +15,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     --hint: var(--tg-theme-hint-color, #8e8e93);
     --card: var(--tg-theme-secondary-bg-color, #f2f2f7);
     --link: var(--tg-theme-link-color, #2f80ed);
-    --yes: #2ecc71; --no: #ff4d5e; --undo: #f5b301;
+    --yes: #2ecc71; --no: #ff4d5e; --undo: #f5b301; --super: #2f9bff;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -43,6 +43,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     font-weight: 800; letter-spacing: 2px; opacity: 0; transform: rotate(-14deg); pointer-events: none; }
   .stamp.yes { left: 18px; color: var(--yes); border-color: var(--yes); }
   .stamp.no { right: 18px; color: var(--no); border-color: var(--no); transform: rotate(14deg); }
+  .stamp.super { top: auto; bottom: 130px; left: 50%; color: var(--super); border-color: var(--super); transform: translateX(-50%) rotate(-8deg); }
   .info { padding: 10px 14px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
   .chip { align-self: flex-start; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
   .chip.match { background: rgba(46,204,113,.18); color: #1e9e57; }
@@ -51,12 +52,12 @@ export const APP_HTML = /* html */ `<!doctype html>
   .facts { color: var(--hint); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .links { display: flex; flex-wrap: wrap; gap: 6px 14px; }
   .links a { color: var(--link); text-decoration: none; font-weight: 600; }
-  nav { display: flex; justify-content: center; align-items: center; gap: 22px; padding-bottom: env(safe-area-inset-bottom); }
+  nav { display: flex; justify-content: center; align-items: center; gap: 16px; padding-bottom: env(safe-area-inset-bottom); }
   nav button { border: 0; border-radius: 50%; background: var(--card); box-shadow: 0 3px 12px rgba(0,0,0,.12);
     display: grid; place-items: center; cursor: pointer; }
   nav .big { width: 64px; height: 64px; font-size: 28px; }
   nav .small { width: 46px; height: 46px; font-size: 20px; }
-  nav .no { color: var(--no); } nav .yes { color: var(--yes); } nav .undo { color: var(--undo); }
+  nav .no { color: var(--no); } nav .yes { color: var(--yes); } nav .undo { color: var(--undo); } nav .super { color: var(--super); }
   nav button:disabled { opacity: .35; }
   .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--hint); padding: 24px; }
   .empty div { font-size: 52px; margin-bottom: 8px; }
@@ -69,8 +70,9 @@ export const APP_HTML = /* html */ `<!doctype html>
   <header><b>🏠 Хата</b><span id="left"></span></header>
   <div id="stack"></div>
   <nav>
-    <button class="big no" id="no" aria-label="Не нравится">✖</button>
     <button class="small undo" id="undo" aria-label="Вернуть" disabled>↩</button>
+    <button class="big no" id="no" aria-label="Не нравится">✖</button>
+    <button class="small super" id="super" aria-label="Суперлайк">★</button>
     <button class="big yes" id="yes" aria-label="Нравится">♥</button>
   </nav>
 </div>
@@ -144,6 +146,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     photo.appendChild(shade);
     photo.appendChild(el('div', 'stamp yes', 'ДА'));
     photo.appendChild(el('div', 'stamp no', 'НЕТ'));
+    photo.appendChild(el('div', 'stamp super', 'СУПЕР'));
     card.appendChild(photo);
 
     const info = el('div', 'info');
@@ -175,10 +178,10 @@ export const APP_HTML = /* html */ `<!doctype html>
       if (failed) e.firstChild.textContent = failed;
       if (loading) e.innerHTML = '<p>Загружаю квартиры…</p>';
       stack.appendChild(e);
-      $('yes').disabled = $('no').disabled = true;
+      $('yes').disabled = $('no').disabled = $('super').disabled = true;
       return;
     }
-    $('yes').disabled = $('no').disabled = false;
+    $('yes').disabled = $('no').disabled = $('super').disabled = false;
     if (cards[1]) stack.appendChild(cardEl(cards[1], true));
     const top = cardEl(cards[0], false);
     stack.appendChild(top);
@@ -187,7 +190,7 @@ export const APP_HTML = /* html */ `<!doctype html>
 
   function drag(card) {
     let x0 = 0, y0 = 0, dx = 0, dy = 0, down = false, moved = false;
-    const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no');
+    const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no'), sup = card.querySelector('.stamp.super');
     card.addEventListener('pointerdown', (e) => {
       if (e.target.closest('a')) return;
       down = true; moved = false; x0 = e.clientX; y0 = e.clientY; dx = dy = 0;
@@ -196,11 +199,13 @@ export const APP_HTML = /* html */ `<!doctype html>
     card.addEventListener('pointermove', (e) => {
       if (!down) return;
       dx = e.clientX - x0; dy = e.clientY - y0;
-      if (Math.abs(dx) > 8) moved = true;
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
       if (!moved) return;
-      card.style.transform = 'translate(' + dx + 'px,' + dy * 0.15 + 'px) rotate(' + dx / 18 + 'deg)';
-      yes.style.opacity = Math.max(0, Math.min(1, dx / 90));
-      no.style.opacity = Math.max(0, Math.min(1, -dx / 90));
+      const up = -dy > Math.abs(dx);  // mostly upwards: super like
+      card.style.transform = 'translate(' + dx + 'px,' + (up ? dy : dy * 0.15) + 'px) rotate(' + dx / 18 + 'deg)';
+      yes.style.opacity = up ? 0 : Math.max(0, Math.min(1, dx / 90));
+      no.style.opacity = up ? 0 : Math.max(0, Math.min(1, -dx / 90));
+      sup.style.opacity = up ? Math.max(0, Math.min(1, -dy / 90)) : 0;
     });
     const end = (e) => {
       if (!down) return;
@@ -211,9 +216,10 @@ export const APP_HTML = /* html */ `<!doctype html>
         if (e.clientY >= r.top && e.clientY <= r.bottom) card.nextPhoto(e.clientX - r.left < r.width / 3 ? -1 : 1);
         return;
       }
+      if (-dy > 110 && -dy > Math.abs(dx)) return judge('super', card);
       if (dx > 100) return judge('like', card);
       if (dx < -100) return judge('hide', card);
-      card.style.transition = 'transform .25s'; card.style.transform = ''; yes.style.opacity = no.style.opacity = 0;
+      card.style.transition = 'transform .25s'; card.style.transform = ''; yes.style.opacity = no.style.opacity = sup.style.opacity = 0;
     };
     card.addEventListener('pointerup', end);
     card.addEventListener('pointercancel', end);
@@ -223,13 +229,15 @@ export const APP_HTML = /* html */ `<!doctype html>
     const c = cards[0];
     if (!c) return;
     card = card || stack.lastChild;
-    haptic(kind === 'like' ? 'medium' : 'light');
+    haptic(kind === 'hide' ? 'light' : kind === 'super' ? 'heavy' : 'medium');
     card.style.transition = 'transform .3s ease-out';
-    card.style.transform = 'translate(' + (kind === 'like' ? 150 : -150) + 'vw, 40px) rotate(' + (kind === 'like' ? 30 : -30) + 'deg)';
+    card.style.transform = kind === 'super' ? 'translate(0, -130vh)'
+      : 'translate(' + (kind === 'like' ? 150 : -150) + 'vw, 40px) rotate(' + (kind === 'like' ? 30 : -30) + 'deg)';
     cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind });
     if (history.length > 20) history.shift();
     api('/api/react', { id: c.id, kind }).catch(() => toast('Не сохранилось, проверьте интернет'));
     if (kind === 'like') toast('❤️ В избранном');
+    if (kind === 'super') toast('🌟 Суперлайк: список /super');
     setTimeout(render, 220);
     if (cards.length < 5) load();
   }
@@ -246,8 +254,9 @@ export const APP_HTML = /* html */ `<!doctype html>
 
   $('yes').onclick = () => judge('like');
   $('no').onclick = () => judge('hide');
+  $('super').onclick = () => judge('super');
   $('undo').onclick = undo;
-  document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') judge('like'); if (e.key === 'ArrowLeft') judge('hide'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') judge('like'); if (e.key === 'ArrowLeft') judge('hide'); if (e.key === 'ArrowUp') judge('super'); });
   render();
   load();
 })();

@@ -25,17 +25,19 @@ export type Catalogue = Record<string, CatalogueItem>;
 /** Swipe-card details (keys 'cards:<n>', ~40 flats each): title, bedrooms, photos, facts, plus/minus, unknowns, route. */
 export interface CardDetails { h?: string; b?: number | null; i?: string[]; f?: string; x?: string; w?: string[]; r?: string | null }
 // Free plan: 10 ms CPU per request, so the deck never parses all photos at once, only the chunks it shows.
-type Kind = 'like' | 'hide';
+type Kind = 'like' | 'hide' | 'super';
 
 const FAV_BUTTON = '⭐ Избранное';
-const replyKeyboard = { keyboard: [[{ text: FAV_BUTTON }]], resize_keyboard: true, is_persistent: true };
-const HELP = `Я присылаю квартиры три раза в день.\n👍 под квартирой: добавить в избранное, 👎: убрать квартиру из чата у обоих.\n${FAV_BUTTON} (кнопка внизу или /fav): список избранного.\n🏠 Свайпы (кнопка меню слева от поля ввода или /app): все квартиры карточками с фото, вправо нравится, влево нет.`;
+const SUPER_BUTTON = '🌟 Суперлайки';
+const replyKeyboard = { keyboard: [[{ text: FAV_BUTTON }, { text: SUPER_BUTTON }]], resize_keyboard: true, is_persistent: true };
+const HELP = `Я присылаю квартиры три раза в день.\n👍 под квартирой: добавить в избранное, 👎: убрать квартиру из чата у обоих.\n🌟 под квартирой: суперлайк, отдельный список ${SUPER_BUTTON} (кнопка внизу или /super).\n${FAV_BUTTON} (кнопка внизу или /fav): список избранного.\n🏠 Свайпы (кнопка меню слева от поля ввода или /app): все квартиры карточками с фото, вправо нравится, вверх суперлайк, влево нет.`;
 
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 export const keyboard = (groupId: string, chosen?: Kind) => ({
   inline_keyboard: [[
     { text: chosen === 'like' ? '✅ Интересно' : '👍 Интересно', callback_data: `l|${groupId}`.slice(0, 64) },
+    { text: chosen === 'super' ? '🌟 Супер!' : '🌟', callback_data: `s|${groupId}`.slice(0, 64) },
     { text: chosen === 'hide' ? '🚫 Скрыто' : '👎 Скрыть', callback_data: `h|${groupId}`.slice(0, 64) },
   ]],
 });
@@ -66,21 +68,22 @@ export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string;
 
 export async function setReaction(kv: KV, kind: Kind, chat: string, gid: string) {
   await kv.put(rKey(kind, chat, gid), '1', { metadata: { at: new Date().toISOString() } });
-  await kv.delete(rKey(kind === 'like' ? 'hide' : 'like', chat, gid));
+  for (const other of ['like', 'hide', 'super'] as const) if (other !== kind) await kv.delete(rKey(other, chat, gid));
 }
 
-/** 👍 flats still on sale (seen by the monitor in the last 3 days), closest to school first. */
-export function favouritesText(liked: Set<string>, cat: Catalogue, now = Date.now()): string {
+/** 👍 (or 🌟) flats still on sale (seen by the monitor in the last 3 days), closest to school first. */
+export function favouritesText(liked: Set<string>, cat: Catalogue, now = Date.now(), kind: 'like' | 'super' = 'like'): string {
+  const [icon, title] = kind === 'super' ? ['🌟', 'Суперлайки'] : ['⭐', 'Избранное'];
   const items = [...liked].map((g) => cat[g]).filter((x): x is CatalogueItem => Boolean(x));
   const onSale = items.filter((x) => now - Date.parse(x.s) < 3 * 86400_000).sort((a, b) => (a.c ?? 99) - (b.c ?? 99));
-  if (!onSale.length && !items.length) return '⭐ Избранное пока пусто: нажимайте 👍 под квартирами.';
+  if (!onSale.length && !items.length) return `${icon} ${title}: пока пусто, нажимайте ${kind === 'super' ? '🌟' : '👍'} под квартирами или свайпайте в «🏠 Свайпы».`;
   const lines = onSale.map((x, i) => {
     const facts = [x.p ? `${Math.round(x.p / 1000)} тыс. €` : 'цена ?', x.a ? `${Math.round(x.a)} м²` : null,
       x.c !== null ? `🚗 ${Math.round(x.c)} мин` : null].filter(Boolean).join(' · ');
     return `${i + 1}. <a href="${esc(x.u)}">${esc(x.t)}</a> — ${esc(facts)}`;
   });
   const gone = items.length - onSale.length;
-  return `⭐ <b>Избранное</b>: ${onSale.length}\n${lines.join('\n')}${gone ? `\n\n(ещё ${gone} уже сняты с продажи)` : ''}`;
+  return `${icon} <b>${title}</b>: ${onSale.length}\n${lines.join('\n')}${gone ? `\n\n(ещё ${gone} уже сняты с продажи)` : ''}`;
 }
 
 async function tg(env: Env, method: string, payload: Record<string, unknown>): Promise<boolean> {
@@ -116,7 +119,7 @@ export async function applyReaction(env: Env, kind: Kind, chat: string, gid: str
   for (const [c, id] of cat[gid]?.m ?? []) if (kind === 'hide' || c === chat) posts.set(`${c}:${id}`, [c, id]);
   if (pressedMessageId) posts.set(`${chat}:${pressedMessageId}`, [chat, pressedMessageId]);
   for (const [c, id] of posts.values()) {
-    if (kind === 'like' || !(await tg(env, 'deleteMessage', { chat_id: c, message_id: id }))) {
+    if (kind !== 'hide' || !(await tg(env, 'deleteMessage', { chat_id: c, message_id: id }))) {
       await tg(env, 'editMessageReplyMarkup', { chat_id: c, message_id: id, reply_markup: keyboard(gid, kind) });
     }
   }
@@ -126,12 +129,12 @@ export async function handleUpdate(env: Env, u: Update): Promise<void> {
   const allowed = chatIds(env);
   const q = u.callback_query;
   if (q) {
-    const m = q.data?.match(/^([lh])\|(.+)$/);
+    const m = q.data?.match(/^([lhs])\|(.+)$/);
     const chat = String(q.message?.chat.id ?? '');
     if (!m || !allowed.includes(chat)) { await tg(env, 'answerCallbackQuery', { callback_query_id: q.id }); return; }
-    const kind: Kind = m[1] === 'l' ? 'like' : 'hide';
+    const kind: Kind = m[1] === 'l' ? 'like' : m[1] === 's' ? 'super' : 'hide';
     const gid = m[2];
-    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: kind === 'like' ? 'Добавлено в избранное ⭐' : 'Убрано' });
+    await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, text: kind === 'hide' ? 'Убрано' : kind === 'super' ? 'Суперлайк 🌟' : 'Добавлено в избранное ⭐' });
     await applyReaction(env, kind, chat, gid, q.message?.message_id);
     return;
   }
@@ -144,9 +147,10 @@ export async function handleUpdate(env: Env, u: Update): Promise<void> {
     return;
   }
   let text = HELP;
-  if (/^\/fav|избранн|^⭐/.test(t)) {
-    const liked = new Set((await listReactions(env.KV)).filter((r) => r.kind === 'like').map((r) => r.gid));
-    text = favouritesText(liked, ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue);
+  const list: 'like' | 'super' | null = /^\/super|супер|^🌟/.test(t) ? 'super' : /^\/fav|избранн|^⭐/.test(t) ? 'like' : null;
+  if (list) {
+    const ids = new Set((await listReactions(env.KV)).filter((r) => r.kind === list).map((r) => r.gid));
+    text = favouritesText(ids, ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue, Date.now(), list);
   }
   for (const part of chunks(text)) {
     await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: part, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: replyKeyboard });
@@ -206,14 +210,13 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
     return json({ total: all.length, cards });
   }
   if (!body.id) return json({ error: 'no id' }, 400);
-  if (path === '/api/react' && (body.kind === 'like' || body.kind === 'hide')) {
+  if (path === '/api/react' && (body.kind === 'like' || body.kind === 'hide' || body.kind === 'super')) {
     await applyReaction(env, body.kind, user, body.id);
     return json({ ok: true });
   }
   if (path === '/api/undo') {
     // Takes back this user's judgement (a deleted post stays deleted; the card comes back to the deck).
-    await env.KV.delete(rKey('like', user, body.id));
-    await env.KV.delete(rKey('hide', user, body.id));
+    for (const k of ['like', 'hide', 'super'] as const) await env.KV.delete(rKey(k, user, body.id));
     return json({ ok: true });
   }
   return json({ error: 'unknown' }, 404);
