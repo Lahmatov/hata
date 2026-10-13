@@ -61,8 +61,10 @@ export function skipEmail(from: string, subject: string): boolean {
     || /no longer listed|já não está|deixou de estar|removed|retirad|response about|resposta|início de sessão|sign[- ]?in|login|confirmação de registo|registration/i.test(subject);
 }
 
-/** Only alerts from the last two weeks: older ones are stale (sold, withdrawn) or from old searches. */
+/** Flats known only from alerts stay in play (unsent ones are retried, unmentioned ones expire) for two weeks. */
 export const EMAIL_MAX_AGE_DAYS = 14;
+/** Only e-mails from the last day are read (the monitor runs several times a day; each e-mail is read once). */
+export const EMAIL_READ_DAYS = Number(process.env.EMAIL_READ_DAYS ?? 1);
 
 /** Pure parser for one alert e-mail (HTML). Exported for fixture tests. */
 export function parseAlertEmail(html: string, receivedAt: string | null = null): RawListing[] {
@@ -151,7 +153,7 @@ export const emailAlerts: Adapter = {
     const lock = await client.getMailboxLock(process.env.IMAP_FOLDER ?? 'INBOX', { readOnly: true });
     try {
       const lastUid = kvGet<number>('email:lastUid') ?? 0;
-      const since = new Date(Date.now() - EMAIL_MAX_AGE_DAYS * 86400_000); // first run: last two weeks
+      const since = new Date(Date.now() - EMAIL_READ_DAYS * 86400_000); // first run: the last day
       const query = lastUid ? { uid: `${lastUid + 1}:*` } : { since };
       let maxUid = lastUid;
       let mails = 0;
@@ -160,7 +162,7 @@ export const emailAlerts: Adapter = {
         maxUid = Math.max(maxUid, msg.uid);
         const parsed = await simpleParser(msg.source);
         if (skipEmail(parsed.from?.text ?? '', parsed.subject ?? '')) continue;
-        if (parsed.date && Date.now() - parsed.date.getTime() > EMAIL_MAX_AGE_DAYS * 86400_000) continue;
+        if (parsed.date && Date.now() - parsed.date.getTime() > EMAIL_READ_DAYS * 86400_000) continue;
         const html = typeof parsed.html === 'string' ? parsed.html : (parsed.textAsHtml ?? '');
         const got = parseAlertEmail(html, parsed.date?.toISOString() ?? null);
         mails++;
