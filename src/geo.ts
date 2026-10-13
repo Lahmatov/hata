@@ -98,6 +98,10 @@ export async function driveMinutes(store: Store, from: Point, to: Point): Promis
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': config.googleMapsKey, 'X-Goog-FieldMask': 'routes.duration' },
         body: JSON.stringify(body),
+      }, 1).catch((e: Error) => {
+        // 429 = the daily quota set in Google Cloud is used up: no more calls (and no retries) this run.
+        if (/HTTP 429/.test(e.message)) googleCalls = Infinity;
+        throw e;
       });
       const s = r.routes?.[0]?.duration;
       min = s ? Number.parseInt(s, 10) / 60 : null;

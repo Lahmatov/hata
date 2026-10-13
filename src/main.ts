@@ -40,6 +40,7 @@ async function collect(store: Store, now: string) {
     const http = new PoliteHttp(adapter.id, { useCache: !flag('no-cache') });
     let count = 0;
     let details = 0;
+    const takenIds = new Set<string>();
     // Search pages carry ~3 photos, the listing page all of them: listings read before photos were stored
     // are re-read, a limited number per run (--photo-backfill=N for a one-off catch-up run).
     let photoBackfill = Number(opt('photo-backfill') ?? process.env.PHOTO_BACKFILL ?? 150);
@@ -69,6 +70,10 @@ async function collect(store: Store, now: string) {
         for (let raw of parsed) {
           if (!worthEnriching(raw)) continue;
           const id = `${raw.source}:${raw.sourceId}`;
+          // A developer's ad lists several units under one id with different prices: take it once per run, or every
+          // run would record each unit's price as a price change.
+          if (takenIds.has(id)) continue;
+          takenIds.add(id);
           const needsDetail = adapter.enrich && details < maxDetail
             && (!store.detailDone(id, raw.price) || (!store.photosDone(id) && photoBackfill-- > 0));
           let detailed = false;
