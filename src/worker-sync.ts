@@ -8,6 +8,7 @@ import { routeUrl } from './extras.ts';
 import { knownPoint } from './geo.ts';
 import { factsLine, ruleBasedProsCons } from './summarize.ts';
 import { score } from './score.ts';
+import { costsLine } from './costs.ts';
 import { tableRow } from './table.ts';
 import { featuresFromText, featuresList } from './adapters/text.ts';
 import type { CardDetails, Catalogue } from '../worker/index.ts';
@@ -73,7 +74,7 @@ export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Cat
     (cards[n] ??= {})[gid] = {
       h: l.title, b: l.bedrooms, i: (l.images ?? (l.image ? [l.image] : [])).slice(0, 60),
       f: factsLine(l), x: ruleBasedProsCons(l), w: c.verdict === 'manual' ? c.reasons : [], r: routeUrl(l, school),
-      y: s.text, e: featuresList(f),
+      y: s.text, e: featuresList(f), z: costsLine(l.price, l.description),
     };
     const members = all.filter((m) => m.group_id === gid && now - Date.parse(m.last_seen) < 7 * 86400_000);
     (rows[n] ??= {})[gid] = tableRow(l, c, s, { members, prices: store.priceHistory(l.id), school, now });

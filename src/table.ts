@@ -1,4 +1,5 @@
 import { featuresFromText, featuresList } from './adapters/text.ts';
+import { condoFee, purchaseCosts } from './costs.ts';
 import { routeUrl } from './extras.ts';
 import type { Point } from './geo.ts';
 import type { Score } from './score.ts';
@@ -19,6 +20,7 @@ export function tableRow(l: Listing, c: Classified, s: Score, ctx: { members: Li
   const now = ctx.now ?? Date.now();
   const f = featuresFromText(l.description);
   const local = s.local;
+  const cost = l.price ? purchaseCosts(l.price) : null;
   const since = l.listed_since && !Number.isNaN(Date.parse(l.listed_since)) ? l.listed_since : l.first_seen;
   const others = ctx.members.filter((m) => m.id !== l.id).map((m) => `${SOURCE_RU[m.source] ?? m.source}: ${m.url}`);
   const verdict = c.verdict === 'match' ? 'да' : c.verdict === 'negotiate' ? 'дороже бюджета, нужен торг' : `проверить: ${c.reasons.join(', ')}`;
@@ -26,7 +28,9 @@ export function tableRow(l: Listing, c: Classified, s: Score, ctx: { members: Li
   return [
     s.total, s.text,
     l.neighborhood ?? '', l.municipality ?? '', l.address ?? '',
-    l.price, ctx.prices.length >= 2 ? ctx.prices.map((p) => `${Math.round(p / 1000)}`).join(' → ') + ' тыс.' : '', l.price_per_m2 ? Math.round(l.price_per_m2) : null,
+    l.price, ctx.prices.length >= 2 ? ctx.prices.map((p) => `${Math.round(p / 1000)}`).join(' → ') + ' тыс.' : '',
+    cost ? Math.round(cost.total) : null, cost ? Math.round(cost.monthly) : null, condoFee(l.description),
+    l.price_per_m2 ? Math.round(l.price_per_m2) : null,
     local && l.price_per_m2 ? Math.round((l.price_per_m2 / local.m - 1) * 1000) / 1000 : null, l.area_m2, l.bedrooms,
     l.bathrooms, yn(l.garage), l.floor ?? '?', yn(l.elevator), CONDITION_RU[l.condition ?? ''] ?? '?',
     f.year, f.energy ?? '', featuresList(f).join(', '),
