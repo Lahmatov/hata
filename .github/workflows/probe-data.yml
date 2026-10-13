@@ -1,0 +1,19 @@
+name: probe-data
+# Checks the open-data sources used to enrich favourites (INE prices, APA flood zones, noise maps, Overpass).
+on:
+  workflow_dispatch:
+  push:
+    branches: ['claude/**']
+    paths: ['scripts/probe-data.mjs']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/probe-data.mjs
