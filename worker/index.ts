@@ -24,6 +24,8 @@ export interface Env { KV: KV; TELEGRAM_BOT_TOKEN: string; TELEGRAM_CHAT_ID: str
 export interface CatalogueItem {
   t: string; u: string; p: number | null; a: number | null; c: number | null; s: string; m: [string, number][];
   k?: string; n?: number; q?: number;
+  /** Coordinates for the map: [lat, lon]; ga = 1 when only the neighbourhood is known. */
+  g?: [number, number]; ga?: 1;
 }
 export type Catalogue = Record<string, CatalogueItem>;
 /**
@@ -38,7 +40,8 @@ const FAV_BUTTON = '⭐ Избранное';
 const SUPER_BUTTON = '🌟 Суперлайки';
 const TABLE_BUTTON = '📊 Таблица';
 const replyKeyboard = { keyboard: [[{ text: FAV_BUTTON }, { text: SUPER_BUTTON }, { text: TABLE_BUTTON }]], resize_keyboard: true, is_persistent: true };
-const HELP = `Я присылаю квартиры три раза в день.\n👍 под квартирой: добавить в избранное, 👎: убрать квартиру из чата у обоих.\n🌟 под квартирой: суперлайк, отдельный список ${SUPER_BUTTON} (кнопка внизу или /super).\n${FAV_BUTTON} (кнопка внизу или /fav): список избранного.\n🏠 Свайпы (кнопка меню слева от поля ввода или /app): все квартиры карточками с фото, вправо нравится, вверх суперлайк, влево нет. Вкладки «⭐ Избранное» (второй раунд по лайкам) и «🏆 Рейтинг» (по баллам).
+const HELP = `Я присылаю квартиры три раза в день.\n👍 под квартирой: добавить в избранное, 👎: убрать квартиру из чата у обоих.\n🌟 под квартирой: суперлайк, отдельный список ${SUPER_BUTTON} (кнопка внизу или /super).\n${FAV_BUTTON} (кнопка внизу или /fav): список избранного.\n🏠 Свайпы (кнопка меню слева от поля ввода или /app): все квартиры карточками с фото, вправо нравится, вверх суперлайк, влево нет. Вкладки «⭐ Избранное» (второй раунд по лайкам, общие статусы и заметки, просмотр в календарь) и «🏆 Рейтинг» (по баллам, карта, сравнение 2–4 квартир).
+💞 Когда квартира нравится обоим, бот пишет обоим. По избранному приходят новости: подешевела, снята, снова в продаже.
 ${TABLE_BUTTON} (кнопка внизу или /export): всё избранное обоих в таблице Excel со всеми параметрами и рейтингом.`;
 
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -118,7 +121,7 @@ export function matchText(x: CatalogueItem | undefined, superLike: boolean): str
   if (!x) return '💞 Совпадение! Вам обоим понравилась квартира. Она в «⭐ Избранное».';
   const facts = [x.p ? `${Math.round(x.p / 1000)} тыс. €` : null, x.a ? `${Math.round(x.a)} м²` : null,
     x.c !== null ? `🚗 ${Math.round(x.c)} мин` : null, x.q !== undefined ? `🏆 ${x.q}` : null].filter(Boolean).join(' · ');
-  return `💞 <b>Совпадение!</b>${superLike ? ' 🌟' : ''} Вам обоим нравится:\n<a href="${esc(x.u)}">${esc(x.t)}</a>\n${esc(facts)}\n\nЗвоним? Все совпадения в «🏠 Свайпы» → «⭐ Избранное».`;
+  return `💞 <b>Совпадение!</b>${superLike ? ' 🌟' : ''} Вам обоим нравится:\n<a href="${esc(x.u)}">${esc(x.t)}</a>\n${esc(facts)}\n\nЗвоним? Статус, заметку и время просмотра можно поставить в «🏠 Свайпы» → «⭐ Избранное».`;
 }
 
 /** 👍 (or 🌟) flats still on sale (seen by the monitor in the last 3 days), closest to school first. */
@@ -165,6 +168,28 @@ async function names(env: Env): Promise<Record<string, string>> {
   return out;
 }
 
+// ---------- Shared status and note per flat (both people see and edit the same one) ----------
+
+export const STATUSES = { call: '📞 позвонить', called: '☎️ позвонили', viewing: '📅 просмотр', seen: '👀 посмотрели', offer: '🤝 предложение', no: '✖️ отказ' } as const;
+export type Status = keyof typeof STATUSES;
+/** s status, t note (≤ 300 chars, kept in the key's metadata: one list call reads all), d viewing 'YYYY-MM-DDTHH:mm', by who, at when. */
+export interface Note { s?: Status; t?: string; d?: string; by?: string; at?: string }
+
+export async function listNotes(kv: KV): Promise<Record<string, Note>> {
+  const out: Record<string, Note> = {};
+  for (const k of await listAll(kv, 'n:')) out[k.name.slice(2)] = (k.metadata ?? {}) as Note;
+  return out;
+}
+
+export async function saveNote(kv: KV, gid: string, n: { s?: unknown; t?: unknown; d?: unknown }, by: string): Promise<Note> {
+  const note: Note = { by, at: new Date().toISOString() };
+  if (typeof n.s === 'string' && n.s in STATUSES) note.s = n.s as Status;
+  if (typeof n.t === 'string' && n.t.trim()) note.t = n.t.trim().slice(0, 300);
+  if (typeof n.d === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(n.d)) note.d = n.d;
+  await kv.put(`n:${gid}`, '1', { metadata: note });
+  return note;
+}
+
 const KIND_RU: Record<Kind, string> = { super: '🌟 супер', like: '👍 да', hide: '👎 нет' };
 
 /**
@@ -184,9 +209,15 @@ export async function favouritesTable(kv: KV, people: Record<string, string>, no
   }
   const who = Object.keys(people);
   const cols: TableCol[] = [{ h: '№', w: 4, f: 'int' }, ...who.map((id) => ({ h: people[id], w: 9 })), ...TABLE_COLS];
+  const notes = await listNotes(kv);
+  const at = (h: string) => TABLE_COLS.findIndex((c) => c.h === h);
   const rows = items.map((it, i) => {
     const mine = (id: string) => reactions.find((r) => r.gid === it.id && r.chat === id)?.kind;
-    const row = (it.x.n !== undefined ? chunks.get(it.x.n)?.[it.id] : undefined) ?? basicRow(it.x);
+    const row = [...((it.x.n !== undefined ? chunks.get(it.x.n)?.[it.id] : undefined) ?? basicRow(it.x))];
+    const n = notes[it.id];
+    if (n?.s) row[at('Статус')] = STATUSES[n.s];
+    if (n?.d) row[at('Просмотр (дата)')] = n.d.replace('T', ' ');
+    if (n?.t) row[at('Заметки')] = n.t;
     return [i + 1, ...who.map((id) => { const k = mine(id); return k ? KIND_RU[k] : '—'; }), ...row];
   });
   return { cols, rows };
@@ -317,7 +348,7 @@ export async function verifyInitData(initData: string, token: string, maxAgeSec 
 }
 
 /** me / ot: this user's and the other person's reaction (favourites mode). */
-export type Card = CatalogueItem & CardDetails & { id: string; me?: Kind; ot?: Kind };
+export type Card = CatalogueItem & CardDetails & { id: string; me?: Kind; ot?: Kind; nt?: Note };
 
 /**
  * The cards this user has not judged yet: on sale, not hidden by anyone, not already 👍/👎 by this user.
@@ -353,7 +384,8 @@ export function favDeck(cat: Catalogue, reactions: { kind: Kind; chat: string; g
 }
 
 async function appApi(req: Request, env: Env, path: string): Promise<Response> {
-  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean };
+  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean;
+    ids?: string[]; note?: { s?: unknown; t?: unknown; d?: unknown } };
   const user = await verifyInitData(body.initData ?? '', env.TELEGRAM_BOT_TOKEN);
   if (!user || !chatIds(env).includes(user)) return json({ error: 'not allowed' }, 403);
   if (path === '/api/deck') {
@@ -361,6 +393,8 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
     const exclude = new Set(body.exclude ?? []);
     const fav = body.mode === 'fav';
     const all = (fav ? favDeck : deck)(cat, await listReactions(env.KV), user).filter((c) => !exclude.has(c.id));
+    const notes = fav ? await listNotes(env.KV) : {};
+    for (const c of all) if (notes[c.id]) c.nt = notes[c.id];
     if (fav && body.slim) return json({ total: all.length, cards: all, names: await names(env) });
     const at = body.first ? all.findIndex((c) => c.id === body.first) : -1;
     if (at > 0) all.unshift(...all.splice(at, 1));
@@ -373,6 +407,18 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
     return json({ total: all.length, cards, names: fav ? await names(env) : undefined });
   }
   if (path === '/api/export') return json({ ok: true, rows: await sendTable(env, user) });
+  if (path === '/api/cards') {
+    // Up to 4 flats with all details (comparison view).
+    const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
+    const ids = (body.ids ?? []).filter((id) => cat[id]).slice(0, 4);
+    const chunks = new Map<number, Record<string, CardDetails>>();
+    for (const n of new Set(ids.map((id) => cat[id].n).filter((n): n is number => n !== undefined))) {
+      chunks.set(n, ((await env.KV.get(`cards:${n}`, 'json')) ?? {}) as Record<string, CardDetails>);
+    }
+    const notes = await listNotes(env.KV);
+    return json({ cards: ids.map((id) => ({ ...cat[id], id, m: [], ...(cat[id].n !== undefined ? chunks.get(cat[id].n!)?.[id] : undefined), nt: notes[id] })) });
+  }
+  if (path === '/api/note' && body.id) return json({ ok: true, note: await saveNote(env.KV, body.id, body.note ?? {}, user) });
   if (!body.id) return json({ error: 'no id' }, 400);
   if (path === '/api/react' && (body.kind === 'like' || body.kind === 'hide' || body.kind === 'super')) {
     await applyReaction(env, body.kind, user, body.id, undefined, body.mine === true);
