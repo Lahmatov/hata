@@ -84,3 +84,15 @@ test('houses from alerts are rejected, apartments with "casas de banho" are not'
   expect(classify(mk({ title: 'Moradia T3 em Belas' })).verdict).toBe('reject');
   expect(classify(mk({ title: 'Apartamento T3 com 2 casas de banho' })).verdict).toBe('match');
 });
+
+test('✅ all criteria: lift, garage, T3+, 2+ bathrooms, under 20 min; unknown counts as no', async () => {
+  const { allCriteria } = await import('../src/filter.ts');
+  const ok = mk({ elevator: true, garage: true, bedrooms: 3, bathrooms: 2, commute_min: 19 });
+  expect(allCriteria(ok)).toBe(true);
+  expect(allCriteria({ ...ok, commute_min: 20 })).toBe(false);
+  expect(allCriteria({ ...ok, elevator: null })).toBe(false);
+  expect(allCriteria({ ...ok, bathrooms: 1 })).toBe(false);
+  expect(allCriteria({ ...ok, bedrooms: 2 })).toBe(false);
+  expect(allCriteria({ ...ok, garage: false })).toBe(false);
+  expect(allCriteria({ ...ok, commute_min: null })).toBe(false);
+});

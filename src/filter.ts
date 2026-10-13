@@ -51,3 +51,13 @@ export function worthEnriching(l: { price: number | null; bedrooms: number | nul
   return (l.price === null || l.price <= c.maxPriceNegotiable) && (l.bedrooms === null || l.bedrooms >= c.minBedrooms)
     && (l.area_m2 === null || l.area_m2 >= c.minAreaM2);
 }
+
+/**
+ * Everything the family asked for, strictly: lift, garage, T3 or bigger, 2+ bathrooms and under the preferred
+ * commute (20 min). Unknown counts as no. Drives the "✅ всё подходит" filter in the swipe app.
+ */
+export function allCriteria(l: Listing): boolean {
+  const c = config.criteria;
+  return l.elevator === true && l.garage === true && (l.bedrooms ?? 0) >= c.minBedrooms && (l.bathrooms ?? 0) >= c.minBathrooms
+    && l.commute_min !== null && l.commute_min < c.preferredCommuteMin;
+}
