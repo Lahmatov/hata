@@ -712,6 +712,8 @@ export const APP_HTML = /* html */ `<!doctype html>
   $('prev').onclick = () => browse(-1);
   $('next').onclick = () => browse(1);
   document.addEventListener('keydown', (e) => {
+    // Not while Street View or a sheet is open (arrows walk / edit the note there, not judge the hidden card).
+    if ($('walk').style.display === 'flex' || $('sheet').style.display === 'block') return;
     if (mode === 'fav' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) return browse(e.key === 'ArrowRight' ? 1 : -1);
     if (e.key === 'ArrowRight') judge('like'); if (e.key === 'ArrowLeft') judge('hide'); if (e.key === 'ArrowUp') judge('super');
   });
