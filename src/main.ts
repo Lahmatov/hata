@@ -2,11 +2,13 @@ import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { adapters } from './adapters/index.ts';
 import { EMAIL_MAX_AGE_DAYS } from './adapters/email.ts';
 import { favouriteGroups, favouriteNews, favouriteNewsText } from './favwatch.ts';
+import { refreshIne } from './ine.ts';
+import { fillNearby } from './nearby.ts';
 import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
 import { classify, worthEnriching } from './filter.ts';
-import { driveMinutes, listingPoint, routingLeft, schoolPoint } from './geo.ts';
+import { driveMinutes, knownPoint, listingPoint, routingLeft, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
@@ -188,6 +190,12 @@ async function main() {
     if (DRY) console.log(favText);
     else await sendTelegram(favText).catch((e) => log.warn(`favourites news: ${(e as Error).message}`));
   }
+
+  // Sale prices (INE, weekly) and what is near each favourite (OpenStreetMap, cached), for cards and the table.
+  await refreshIne(store);
+  const favPoints = store.all().filter((l) => favourites.has(l.group_id)).map((l) => knownPoint(store, l))
+    .filter((x): x is NonNullable<typeof x> => x !== null && !x.approx).map((x) => x.p);
+  await fillNearby(store, favPoints);
 
   // Build digest: one item per duplicate group.
   const byGroup = new Map<string, DigestItem>();
