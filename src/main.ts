@@ -5,7 +5,7 @@ import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
 import { classify, worthEnriching } from './filter.ts';
-import { driveMinutes, listingPoint, schoolPoint } from './geo.ts';
+import { driveMinutes, listingPoint, routingLeft, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
@@ -169,6 +169,8 @@ async function main() {
   for (const s of order) {
     const l = store.get(s.listing.id)!;
     if (school && l.commute_min === null && classify(l).verdict !== 'reject') {
+      // Allowance used up: wait for the next run without geocoding (Nominatim is 1 request/s, thousands after a reset).
+      if (!routingLeft()) { deferred.add(l.id); continue; }
       const { p, approx } = await listingPoint(store, l);
       if (!p) continue;
       const min = await driveMinutes(store, p, school);
