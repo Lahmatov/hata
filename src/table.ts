@@ -16,7 +16,7 @@ const SOURCE_RU: Record<string, string> = { imovirtual: 'Imovirtual', idealista:
 const days = (iso: string, now: number) => Math.max(0, Math.floor((now - Date.parse(iso)) / 86400_000));
 
 
-export function tableRow(l: Listing, c: Classified, s: Score, ctx: { members: Listing[]; prices: number[]; school: Point | null; now?: number; ine?: { v: number } | null; near?: string | null; flood?: string }): TableCell[] {
+export function tableRow(l: Listing, c: Classified, s: Score, ctx: { members: Listing[]; prices: number[]; school: Point | null; now?: number; ine?: { v: number } | null; near?: string | null; flood?: string; planes?: string | null }): TableCell[] {
   const now = ctx.now ?? Date.now();
   const f = featuresFromText(l.description);
   const local = s.local;
@@ -36,7 +36,7 @@ export function tableRow(l: Listing, c: Classified, s: Score, ctx: { members: Li
     l.area_m2, l.bedrooms,
     l.bathrooms, yn(l.garage), l.floor ?? '?', yn(l.elevator), CONDITION_RU[l.condition ?? ''] ?? '?',
     f.year, f.energy ?? '', featuresList(f).join(', '),
-    l.commute_min === null ? null : Math.round(l.commute_min), ctx.near ?? '', ctx.flood ?? '', l.commute_approx ? 'нет, район' : 'да', days(since, now),
+    l.commute_min === null ? null : Math.round(l.commute_min), ctx.near ?? '', ctx.flood ?? '', ctx.planes ?? '', l.commute_approx ? 'нет, район' : 'да', days(since, now),
     verdict, ruleBasedProsCons(l),
     { u: l.url, t: SOURCE_RU[l.source] ?? 'открыть' }, route ? { u: route, t: 'маршрут' } : '', others.join('\n'),
     '', '', '', '',

@@ -1,0 +1,41 @@
+name: planes
+# Samples low aircraft over Greater Lisbon (OpenSky Network, anonymous API) every 20 s for an hour, twice a day
+# (~360 of the ~400 daily anonymous requests). The daily digest reads the samples to show low overflights per flat.
+on:
+  schedule:
+    - cron: '20 7,17 * * *'
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'How long to sample'
+        required: false
+        default: '60'
+concurrency:
+  group: planes
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore samples
+        uses: actions/cache/restore@v4
+        with:
+          path: data/planes.jsonl
+          key: planes-${{ github.run_id }}
+          restore-keys: planes-
+      - run: npx tsx src/planes.ts --collect=${{ github.event.inputs.minutes || '60' }} --every=20
+      - name: Save samples
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/planes.jsonl
+          key: planes-${{ github.run_id }}

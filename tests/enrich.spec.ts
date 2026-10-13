@@ -55,3 +55,20 @@ test('flood: extent with the shortest return period, else a risk area within 500
     globalThis.fetch = orig;
   }
 });
+
+test('planes: low airborne aircraft only; a track passing between two samples counts once', async () => {
+  const { lowAircraft, planeStats, planesLine } = await import('../src/planes.ts');
+  const st = (icao: string, lat: number, lon: number, alt: number, ground = false) => [icao, 'TAP1', 'Portugal', 0, 0, lon, lat, alt, ground, 70, 30, -3, null, alt];
+  expect(lowAircraft([st('a', 38.75, -9.2, 500), st('b', 38.75, -9.2, 3000), st('c', 38.77, -9.13, 0, true)] as never)).toEqual([['a', 38.75, -9.2, 500]]);
+  const flat = { lat: 38.7505, lon: -9.2008 };
+  // Plane "x" flies over the flat between two samples 20 s apart (1.4 km each side), at 400 m; "y" stays 3 km away.
+  const samples = Array.from({ length: 540 }, (_, i) => ({ t: 1000 + i * 20, e: 20, a: [] as [string, number, number, number][] }));
+  samples[10].a.push(['x', 38.7505 - 0.0063, -9.2008 - 0.0063, 420], ['y', 38.78, -9.2, 300]);
+  samples[11].a.push(['x', 38.7505 + 0.0063, -9.2008 + 0.0063, 380], ['y', 38.781, -9.2, 300]);
+  samples[12].a.push(['x', 38.7505 + 0.019, -9.2008 + 0.019, 300]);
+  const s = planeStats(samples, flat);
+  expect(s).toEqual({ passes: 1, hours: 3, lowest: 380 });
+  expect(planesLine(s)).toBe('✈️ ≈ 0,3 низких пролёта в час, самый низкий ~380 м (до 1 км от дома; 3 ч наблюдений OpenSky)');
+  expect(planesLine({ passes: 0, hours: 3, lowest: null })).toBe('✈️ низких пролётов рядом не было (3 ч наблюдений OpenSky)');
+  expect(planesLine({ passes: 5, hours: 1, lowest: 300 })).toBeNull();
+});
