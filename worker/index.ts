@@ -172,8 +172,11 @@ async function names(env: Env): Promise<Record<string, string>> {
 
 export const STATUSES = { call: '📞 позвонить', called: '☎️ позвонили', viewing: '📅 просмотр', seen: '👀 посмотрели', offer: '🤝 предложение', no: '✖️ отказ' } as const;
 export type Status = keyof typeof STATUSES;
-/** s status, t note (≤ 300 chars, kept in the key's metadata: one list call reads all), d viewing 'YYYY-MM-DDTHH:mm', by who, at when. */
-export interface Note { s?: Status; t?: string; d?: string; by?: string; at?: string }
+/**
+ * s status, t note (≤ 300 chars, kept in the key's metadata: one list call reads all), d viewing 'YYYY-MM-DDTHH:mm',
+ * r = 1 when sent to the realtor, by who, at when.
+ */
+export interface Note { s?: Status; t?: string; d?: string; r?: 1; by?: string; at?: string }
 
 export async function listNotes(kv: KV): Promise<Record<string, Note>> {
   const out: Record<string, Note> = {};
@@ -181,11 +184,14 @@ export async function listNotes(kv: KV): Promise<Record<string, Note>> {
   return out;
 }
 
-export async function saveNote(kv: KV, gid: string, n: { s?: unknown; t?: unknown; d?: unknown }, by: string): Promise<Note> {
-  const note: Note = { by, at: new Date().toISOString() };
-  if (typeof n.s === 'string' && n.s in STATUSES) note.s = n.s as Status;
-  if (typeof n.t === 'string' && n.t.trim()) note.t = n.t.trim().slice(0, 300);
-  if (typeof n.d === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(n.d)) note.d = n.d;
+/** Updates only the fields sent (an empty value clears one), so the 📨 toggle keeps the status and the note. */
+export async function saveNote(kv: KV, gid: string, n: { s?: unknown; t?: unknown; d?: unknown; r?: unknown }, by: string): Promise<Note> {
+  const old = ((await kv.getWithMetadata(`n:${gid}`)).metadata ?? {}) as Note;
+  const note: Note = { ...old, by, at: new Date().toISOString() };
+  if ('s' in n) { if (typeof n.s === 'string' && n.s in STATUSES) note.s = n.s as Status; else delete note.s; }
+  if ('t' in n) { if (typeof n.t === 'string' && n.t.trim()) note.t = n.t.trim().slice(0, 300); else delete note.t; }
+  if ('d' in n) { if (typeof n.d === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(n.d)) note.d = n.d; else delete note.d; }
+  if ('r' in n) { if (n.r) note.r = 1; else delete note.r; }
   await kv.put(`n:${gid}`, '1', { metadata: note });
   return note;
 }
@@ -218,6 +224,7 @@ export async function favouritesTable(kv: KV, people: Record<string, string>, no
     if (n?.s) row[at('Статус')] = STATUSES[n.s];
     if (n?.d) row[at('Просмотр (дата)')] = n.d.replace('T', ' ');
     if (n?.t) row[at('Заметки')] = n.t;
+    if (n?.r) row[at('Риелтору')] = '📨 отправлено';
     return [i + 1, ...who.map((id) => { const k = mine(id); return k ? KIND_RU[k] : '—'; }), ...row];
   });
   return { cols, rows };
@@ -384,15 +391,17 @@ export function favDeck(cat: Catalogue, reactions: { kind: Kind; chat: string; g
 }
 
 async function appApi(req: Request, env: Env, path: string): Promise<Response> {
-  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean;
-    ids?: string[]; note?: { s?: unknown; t?: unknown; d?: unknown } };
+  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean; both?: boolean;
+    ids?: string[]; note?: { s?: unknown; t?: unknown; d?: unknown; r?: unknown } };
   const user = await verifyInitData(body.initData ?? '', env.TELEGRAM_BOT_TOKEN);
   if (!user || !chatIds(env).includes(user)) return json({ error: 'not allowed' }, 403);
   if (path === '/api/deck') {
     const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
     const exclude = new Set(body.exclude ?? []);
     const fav = body.mode === 'fav';
-    const all = (fav ? favDeck : deck)(cat, await listReactions(env.KV), user).filter((c) => !exclude.has(c.id));
+    const liked = (k?: Kind) => k === 'like' || k === 'super';
+    const all = (fav ? favDeck : deck)(cat, await listReactions(env.KV), user)
+      .filter((c) => !exclude.has(c.id) && (!fav || !body.both || (liked(c.me) && liked(c.ot))));
     const notes = fav ? await listNotes(env.KV) : {};
     for (const c of all) if (notes[c.id]) c.nt = notes[c.id];
     if (fav && body.slim) return json({ total: all.length, cards: all, names: await names(env) });

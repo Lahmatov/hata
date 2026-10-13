@@ -76,7 +76,13 @@ export const APP_HTML = /* html */ `<!doctype html>
   nav .no { color: var(--no); } nav .yes { color: var(--yes); } nav .undo { color: var(--undo); } nav .super { color: var(--super); }
   nav button:disabled { opacity: .35; }
   nav .arrow { color: var(--hint); width: 40px; height: 40px; font-size: 16px; }
-  nav.fav { gap: 10px; } nav button[hidden] { display: none; }
+  nav.fav { gap: 10px; }
+  .filters { display: none; gap: 6px; padding: 0 2px; }
+  .filters button { border: 1px solid var(--card); background: var(--bg); color: var(--text); border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .filters button.on { background: #e0245e; border-color: #e0245e; color: #fff; font-weight: 600; }
+  .quick { display: flex; gap: 8px; flex-wrap: wrap; }
+  .quick button { border: 1px solid var(--card); background: var(--card); color: var(--text); border-radius: 10px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .quick button.on { background: rgba(46,204,113,.18); border-color: #2ecc71; color: #1e9e57; font-weight: 600; } nav button[hidden] { display: none; }
   .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--hint); padding: 24px; }
   .empty div { font-size: 52px; margin-bottom: 8px; }
   .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; z-index: 10; }
@@ -114,6 +120,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     <div class="tabs"><button data-m="all" class="on">🏠 Новые</button><button data-m="fav">⭐ Избранное</button><button data-m="rank">🏆 Рейтинг</button></div>
     <span id="left"></span>
   </header>
+  <div class="filters" id="filters"><button id="both">💞 Нравится нам обоим</button></div>
   <div id="stack"></div>
   <div id="rankwrap" style="position:relative;flex:1;min-height:0;display:none"><div id="rank"></div></div>
   <nav>
@@ -140,16 +147,34 @@ export const APP_HTML = /* html */ `<!doctype html>
   const sent = new Set();       // ids judged in this session (kept out of the next deck page)
   const viewed = [];            // favourites: cards passed (▶ or a swipe that keeps them), for ◀
   let favTotal = null;          // favourites in the list: set on the first page, minus 👎 in this session
+  let bothOnly = false;         // 💞 filter: flats both of you liked (remembered on this phone)
+  try { bothOnly = localStorage.getItem('hata.both') === '1'; } catch (e) {}
 
   const haptic = (t) => { try { tg.HapticFeedback.impactOccurred(t); } catch (e) {} };
   function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.opacity = 0, 1800); }
   function open(url) { if (!url) return; if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank'); }
   // Telegram's own "Share" in the ⋯ menu always shares the bot; this shares the flat itself.
-  function share(c) {
-    const text = [money(c.p), c.b != null ? 'T' + c.b : null, c.a != null ? Math.round(c.a) + ' м²' : null,
-      c.c != null ? '🚗 ' + Math.round(c.c) + ' мин до школы' : null, c.t].filter(Boolean).join(' · ');
-    const url = 'https://t.me/share/url?url=' + encodeURIComponent(c.u) + '&text=' + encodeURIComponent(text);
+  // Only the listing link: the phone's share sheet (WhatsApp, mail…) when there is one, else copied.
+  function shareLink(c) {
+    if (navigator.share) return navigator.share({ url: c.u }).catch(() => {});
+    const done = () => toast('🔗 Ссылка скопирована');
+    if (navigator.clipboard) return navigator.clipboard.writeText(c.u).then(done).catch(() => tgShare(c));
+    tgShare(c);
+  }
+  function tgShare(c) {
+    const url = 'https://t.me/share/url?url=' + encodeURIComponent(c.u);
     if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, '_blank');
+  }
+
+  // 📨 One tap: sent to the realtor (shared with the other person, kept with the status and note).
+  async function toggleRealtor(c, btn) {
+    const on = !(c.nt && c.nt.r);
+    try {
+      const r = await api('/api/note', { id: c.id, note: { r: on } });
+      c.nt = r.note;
+      btn.classList.toggle('on', on); btn.textContent = on ? '📨 Отправлено риелтору ✓' : '📨 Риелтору';
+      haptic('light');
+    } catch (e) { toast('Не сохранилось, проверьте интернет'); }
   }
   const money = (n) => n == null ? 'цена ?' : n.toLocaleString('ru-RU').replace(/,/g, ' ') + ' €';
   const STATUSES = { call: '📞 позвонить', called: '☎️ позвонили', viewing: '📅 просмотр', seen: '👀 посмотрели', offer: '🤝 предложение', no: '✖️ отказ' };
@@ -210,6 +235,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     const n = c.nt || {};
     const box = el('div', 'notel');
     if (n.s) box.appendChild(el('span', 'st', STATUSES[n.s] + (n.d ? ' ' + n.d.slice(5, 16).replace('T', ' ') : '')));
+    if (n.r) box.appendChild(el('span', 'st', '📨 риелтору'));
     if (n.t) box.appendChild(document.createTextNode(n.t.length > 80 ? n.t.slice(0, 80) + '…' : n.t));
     return box;
   }
@@ -314,7 +340,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     loading = true;
     try {
       const m = mode;
-      const d = await api('/api/deck', { mode: m, first, exclude: cards.map((c) => c.id).concat([...sent]) });
+      const d = await api('/api/deck', { mode: m, first, both: m === 'fav' && bothOnly, exclude: cards.map((c) => c.id).concat([...sent]) });
       if (m !== mode) return;
       first = null;
       if (d.names) names = d.names;
@@ -340,11 +366,15 @@ export const APP_HTML = /* html */ `<!doctype html>
     const box = $('rank');
     box.innerHTML = '<p style="text-align:center;color:var(--hint)">Считаю рейтинг…</p>';
     try {
-      const d = await api('/api/deck', { mode: 'fav', slim: true });
+      const d = await api('/api/deck', { mode: 'fav', slim: true, both: bothOnly });
       names = d.names || names;
       box.textContent = '';
       $('left').textContent = '';
-      if (!d.cards.length) { box.innerHTML = '<p style="text-align:center;color:var(--hint)">В избранном пока пусто.<br>Свайпайте вправо во вкладке «Новые».</p>'; return; }
+      if (!d.cards.length) {
+        box.innerHTML = bothOnly ? '<p style="text-align:center;color:var(--hint)">Общих 💞 пока нет: квартир, которые нравятся вам обоим.</p>'
+          : '<p style="text-align:center;color:var(--hint)">В избранном пока пусто.<br>Свайпайте вправо во вкладке «Новые».</p>';
+        return;
+      }
       const picked = new Set();
       const tools = el('div', 'tools');
       const ex = el('button', 'btn', '📊 Таблица'); ex.onclick = exportTable;
@@ -394,12 +424,19 @@ export const APP_HTML = /* html */ `<!doctype html>
     document.querySelector('nav').style.display = rank ? 'none' : '';
     document.querySelector('nav').classList.toggle('fav', m === 'fav');
     $('prev').hidden = $('next').hidden = m !== 'fav';
+    $('filters').style.display = m === 'all' ? 'none' : 'flex';
+    $('both').classList.toggle('on', bothOnly);
     cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = ''; viewed.length = 0; favTotal = null;
     if (rank) { loadRank(); return; }
     render();
     load();
   }
   document.querySelectorAll('.tabs button').forEach((b) => b.onclick = () => setMode(b.dataset.m));
+  $('both').onclick = () => {
+    bothOnly = !bothOnly;
+    try { localStorage.setItem('hata.both', bothOnly ? '1' : '0'); } catch (e) {}
+    setMode(mode);
+  };
 
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
@@ -439,6 +476,12 @@ export const APP_HTML = /* html */ `<!doctype html>
       a.onclick = (e) => { e.preventDefault(); noteSheet(c, render); };
       nl.appendChild(a);
       info.appendChild(nl);
+      const quick = el('div', 'quick');
+      const rb = el('button', c.nt && c.nt.r ? 'on' : '', c.nt && c.nt.r ? '📨 Отправлено риелтору ✓' : '📨 Риелтору');
+      rb.onclick = () => toggleRealtor(c, rb);
+      const lb = el('button', '', '🔗 Ссылка'); lb.onclick = () => shareLink(c);
+      quick.append(rb, lb);
+      info.appendChild(quick);
     }
     info.appendChild(el('span', 'chip ' + chip[0], chip[1]));
     if (c.e && c.e.length) { const fs = el('div', 'feats'); c.e.forEach((t) => fs.appendChild(el('i', '', t))); info.appendChild(fs); }
@@ -450,7 +493,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     const a1 = el('a', '', 'Открыть объявление'); a1.href = '#'; a1.onclick = (e) => { e.preventDefault(); open(c.u); };
     links.appendChild(a1);
     if (c.r) { const a2 = el('a', '', '🗺 Маршрут'); a2.href = '#'; a2.onclick = (e) => { e.preventDefault(); open(c.r); }; links.appendChild(a2); }
-    const a3 = el('a', '', '📤 Поделиться'); a3.href = '#'; a3.onclick = (e) => { e.preventDefault(); share(c); }; links.appendChild(a3);
+    if (mode !== 'fav') { const a3 = el('a', '', '🔗 Ссылка'); a3.href = '#'; a3.onclick = (e) => { e.preventDefault(); shareLink(c); }; links.appendChild(a3); }
     info.appendChild(links);
     card.appendChild(info);
     show();
@@ -468,7 +511,8 @@ export const APP_HTML = /* html */ `<!doctype html>
     $('next').disabled = !cards.length;
     if (!cards.length) {
       const e = el('div', 'empty');
-      e.innerHTML = failed ? '<p></p>' : mode === 'fav' ? '<p><div>⭐</div>Избранное пройдено.<br>Итог во вкладке «🏆 Рейтинг», там же таблица Excel.</p>'
+      e.innerHTML = failed ? '<p></p>' : mode === 'fav' && bothOnly && !viewed.length ? '<p><div>💞</div>Общих пока нет: квартир, которые нравятся вам обоим.<br>Снимите фильтр «💞», чтобы видеть всё избранное.</p>'
+        : mode === 'fav' ? '<p><div>⭐</div>Избранное пройдено.<br>Итог во вкладке «🏆 Рейтинг», там же таблица Excel.</p>'
         : '<p><div>🎉</div>Всё просмотрено.<br>Новые квартиры появятся после следующей рассылки.</p>';
       if (failed) e.firstChild.textContent = failed;
       if (loading) e.innerHTML = '<p>Загружаю квартиры…</p>';
