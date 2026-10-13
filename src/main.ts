@@ -104,6 +104,34 @@ async function collect(store: Store, now: string) {
   return { seen, failed };
 }
 
+/**
+ * Sale prices (INE, weekly), a location for every favourite (the map), what is near it (OpenStreetMap) and APA
+ * flood maps; all cached, for cards and the table.
+ */
+async function enrichFavourites(store: Store, favourites: Set<string>, geocodeMax = 40): Promise<void> {
+  await refreshIne(store);
+  // Favourites without a location yet (e.g. known only from e-mails, commute still queued): Nominatim, 1 request/s.
+  let geocoded = 0;
+  for (const l of store.all().filter((x) => favourites.has(x.group_id) && !knownPoint(store, x))) {
+    if (geocoded++ >= geocodeMax) break;
+    await listingPoint(store, l);
+  }
+  const favPoints = store.all().filter((l) => favourites.has(l.group_id)).map((l) => knownPoint(store, l))
+    .filter((x): x is NonNullable<typeof x> => x !== null && !x.approx).map((x) => x.p);
+  await fillNearby(store, favPoints);
+  await fillFlood(store, favPoints);
+}
+
+/** --catalogue: refresh the swipe app's data (reactions, favourites' locations and extras, catalogue) without reading the sites or sending a digest. */
+async function catalogueOnly(): Promise<void> {
+  if (!acquireLock()) { log.warn('another run is in progress (data/run.lock); exiting'); return; }
+  const store = new Store();
+  await processUpdates(store).catch((e) => log.warn(`telegram updates: ${e.message}`));
+  await enrichFavourites(store, favouriteGroups(store), 300);
+  if (workerEnabled()) await pushCatalogue(store);
+  else log.warn('WORKER_URL not set: catalogue not pushed');
+}
+
 /** Only one run at a time (launchd + a manual run would double the requests to every site). */
 function acquireLock(): boolean {
   const file = `${config.dataDir}/run.lock`;
@@ -200,19 +228,7 @@ async function main() {
     else await sendTelegram(favText).catch((e) => log.warn(`favourites news: ${(e as Error).message}`));
   }
 
-  // Sale prices (INE, weekly), what is near each favourite (OpenStreetMap) and APA flood maps, cached, for cards and the table.
-  await refreshIne(store);
-  // Favourites without a location yet (e.g. known only from e-mails, commute still queued): geocode them for the
-  // map (Nominatim, 1 request/s, cached), at most 40 per run.
-  let geocoded = 0;
-  for (const l of store.all().filter((x) => favourites.has(x.group_id) && !knownPoint(store, x))) {
-    if (geocoded++ >= 40) break;
-    await listingPoint(store, l);
-  }
-  const favPoints = store.all().filter((l) => favourites.has(l.group_id)).map((l) => knownPoint(store, l))
-    .filter((x): x is NonNullable<typeof x> => x !== null && !x.approx).map((x) => x.p);
-  await fillNearby(store, favPoints);
-  await fillFlood(store, favPoints);
+  await enrichFavourites(store, favourites);
 
   // Build digest: one item per duplicate group.
   const byGroup = new Map<string, DigestItem>();
@@ -310,6 +326,8 @@ if (flag('telegram-chat-id')) {
       if (chats.size) console.log(`\nFor .env (everyone above): TELEGRAM_CHAT_ID=${[...chats.keys()].join(',')}`);
     })
     .catch((e) => { log.error(e.message); process.exit(1); });
+} else if (flag('catalogue')) {
+  catalogueOnly().catch((e) => { log.error(e.message); process.exit(1); });
 } else if (flag('process-updates')) {
   // Light job (every 15 min on GitHub): apply 👍/👎 presses only, no scraping.
   processUpdates(new Store()).catch((e) => { log.error(e.message); process.exit(1); });
