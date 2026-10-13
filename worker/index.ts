@@ -457,7 +457,8 @@ export default {
       }
       return json({ ok: true, added });
     }
-    if (path === '/app') return new Response(APP_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    // no-store: after a deploy Telegram's in-app browser must not keep showing the old page.
+    if (path === '/app') return new Response(APP_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
     if (path.startsWith('/api/') && req.method === 'POST') return appApi(req, env, path);
     return new Response('hata bot');
   },
