@@ -9,8 +9,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let lastNominatim = 0;
 let lastOsrm = 0;
 let googleCalls = 0;
-/** False once this run has used its Google Routes allowance (GOOGLE_MAX_CALLS, default 300). */
-const googleBudgetLeft = () => googleCalls < Number(process.env.GOOGLE_MAX_CALLS ?? 300);
+// Per run (GOOGLE_MAX_CALLS, default 50): ~6 runs a day stay near the 150/day quota set in Google Cloud, which keeps
+// the month inside the 5,000 free Compute Routes Pro requests.
+const googleBudgetLeft = () => googleCalls < Number(process.env.GOOGLE_MAX_CALLS ?? 50);
 
 /** JSON API call with retries/backoff (APIs, not scraped pages: robots.txt does not apply). */
 async function api<T>(url: string, init: RequestInit = {}, attempts = 3): Promise<T> {

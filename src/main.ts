@@ -161,7 +161,12 @@ async function main() {
   // No answer from the router (error, Google allowance used up): those flats wait for the next run instead of
   // going out with "🚗 ?" (after a reset they include flats dropped earlier for being too far).
   const deferred = new Set<string>();
-  for (const s of seen) {
+  // Flats not sent yet first, newest first: with a small routing allowance they must not wait behind recomputing
+  // old ones (or behind old flats that were dropped as too far).
+  const sent = (id: string) => store.notifiedPrice(id) !== null;
+  const order = [...seen].sort((a, b) => Number(sent(a.listing.id)) - Number(sent(b.listing.id))
+    || b.listing.first_seen.localeCompare(a.listing.first_seen));
+  for (const s of order) {
     const l = store.get(s.listing.id)!;
     if (school && l.commute_min === null && classify(l).verdict !== 'reject') {
       const { p, approx } = await listingPoint(store, l);
