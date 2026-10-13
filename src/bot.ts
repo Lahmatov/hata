@@ -52,7 +52,7 @@ export function favouritesText(store: Store, title = 'Избранное', kind:
 }
 
 /** Telegram limits a message to 4096 characters: split on line breaks. */
-function chunks(text: string, max = 3800): string[] {
+export function chunks(text: string, max = 3800): string[] {
   const out: string[] = [];
   let cur = '';
   for (const line of text.split('\n')) {

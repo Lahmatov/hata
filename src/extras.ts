@@ -1,4 +1,4 @@
-import { norm } from './config.ts';
+import { config, norm } from './config.ts';
 import type { Point } from './geo.ts';
 import type { Listing } from './types.ts';
 
@@ -8,11 +8,24 @@ const median = (xs: number[]) => {
 };
 const k = (n: number) => `${Math.round(n / 1000)}`;
 
+/**
+ * Flats to compare prices with: T3+ of the minimum size, one listing per duplicate group (a flat on three
+ * portals counts once; the group's first listing may lack bedrooms or area, so take the first that has them).
+ */
+export function comparablePool(listings: Listing[]): Listing[] {
+  const byGroup = new Map<string, Listing>();
+  for (const l of listings) {
+    if ((l.bedrooms ?? 0) < config.criteria.minBedrooms || (l.area_m2 ?? 0) < config.criteria.minAreaM2) continue;
+    if (!byGroup.has(l.group_id)) byGroup.set(l.group_id, l);
+  }
+  return [...byGroup.values()];
+}
+
 /** Median €/m² of comparable flats: the same parish if it has enough of them, else the same municipality. */
 export function localMedian(l: Listing, pool: Listing[], minSample = 6): { m: number; label: string; n: number } | null {
   for (const [field, label] of [['neighborhood', l.neighborhood], ['municipality', l.municipality]] as const) {
     if (!label) continue;
-    const peers = pool.filter((p) => p.price_per_m2 && norm(p[field]) === norm(label) && p.id !== l.id).map((p) => p.price_per_m2!);
+    const peers = pool.filter((p) => p.price_per_m2 && norm(p[field]) === norm(label) && p.group_id !== l.group_id).map((p) => p.price_per_m2!);
     if (peers.length >= minSample) return { m: median(peers), label, n: peers.length };
   }
   return null;

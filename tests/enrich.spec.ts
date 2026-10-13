@@ -72,3 +72,46 @@ test('planes: low airborne aircraft only; a track passing between two samples co
   expect(planesLine({ passes: 0, hours: 3, lowest: null })).toBe('✈️ низких пролётов рядом не было (3 ч наблюдений OpenSky)');
   expect(planesLine({ passes: 5, hours: 1, lowest: 300 })).toBeNull();
 });
+
+test('overpass: a 200 answer with a runtime-error remark is not stored as "nothing nearby"', async () => {
+  const { Store } = await import('../src/db.ts');
+  const { cachedNearby, fillNearby } = await import('../src/nearby.ts');
+  const store = new Store(':memory:');
+  const p = { lat: 38.75, lon: -9.2 };
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ remark: 'runtime error: Query timed out in "query" at line 3', elements: [] }))) as typeof fetch;
+  try {
+    expect(await fillNearby(store, [p], 5)).toBe(0);
+    expect(cachedNearby(store, p)).toBeUndefined(); // asked again on the next run
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test('nominatim: after a 429 the run stops geocoding (blocked), and nothing is cached', async () => {
+  const { Store } = await import('../src/db.ts');
+  const { geocode } = await import('../src/geo.ts');
+  const store = new Store(':memory:');
+  const orig = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => { calls++; return new Response('slow down', { status: 429 }); }) as typeof fetch;
+  try {
+    expect(await geocode(store, 'Rua A, Benfica')).toBeUndefined(); // no answer: asked again next run
+    expect(await geocode(store, 'Rua B, Carnide')).toBeUndefined();
+    expect(calls).toBe(1); // no retries, no second address
+    expect(store.kvGet('geo:rua a, benfica')).toBeUndefined();
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test('planes: a line cut short in the samples file is skipped, not fatal', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { loadSamples } = await import('../src/planes.ts');
+  const file = join(mkdtempSync(join(tmpdir(), 'planes-')), 'planes.jsonl');
+  const now = Date.parse('2026-10-13T12:00:00Z');
+  writeFileSync(file, `${JSON.stringify({ t: now / 1000 - 60, e: 0, a: [] })}\n{"t":17604`);
+  expect(loadSamples(file, now)).toHaveLength(1);
+});

@@ -1,9 +1,11 @@
 name: telegram-buttons
 # Copies 👍/👎 presses into the database. With the Cloudflare bot worker the buttons are answered there
-# instantly and this only syncs; without it, this job polls Telegram (GitHub may delay it).
+# instantly and this only syncs (the digest job syncs too); without it, this job polls Telegram.
+# Every 3 hours, off the digest's :05: each run costs the worker 2-3 KV list operations (free plan: 1,000 a
+# day, shared with the swipe app), and a run queued in hata-state can push a waiting digest run out.
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '35 */3 * * *'
   workflow_dispatch:
 concurrency:
   group: hata-state # same as daily-digest: never two jobs on the database at once

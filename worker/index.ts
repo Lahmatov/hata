@@ -79,8 +79,9 @@ async function listAll(kv: KV, prefix: string) {
   return keys;
 }
 
-export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string; gid: string; at: string }[]> {
-  const byPair = new Map<string, { kind: Kind; chat: string; gid: string; at: string }>();
+/** Every person-and-flat pair with a press; kind null = taken back (undo). */
+async function reactionPairs(kv: KV): Promise<Map<string, { kind: Kind | null; chat: string; gid: string; at: string }>> {
+  const byPair = new Map<string, { kind: Kind | null; chat: string; gid: string; at: string }>();
   for (const k of await listAll(kv, 'r:')) {
     const [, kind, chat, ...rest] = k.name.split(':');
     const gid = rest.join(':');
@@ -89,11 +90,14 @@ export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string;
   for (const k of await listAll(kv, 'v:')) {
     const [, chat, ...rest] = k.name.split(':');
     const meta = (k.metadata ?? {}) as { kind?: Kind; at?: string };
-    const pair = `${chat}:${rest.join(':')}`;
-    if (!meta.kind) byPair.delete(pair); // taken back (undo), also hides an older r: key
-    else byPair.set(pair, { kind: meta.kind, chat, gid: rest.join(':'), at: meta.at ?? '' });
+    // No kind: taken back (undo), also hides an older r: key.
+    byPair.set(`${chat}:${rest.join(':')}`, { kind: meta.kind ?? null, chat, gid: rest.join(':'), at: meta.at ?? '' });
   }
-  return [...byPair.values()];
+  return byPair;
+}
+
+export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string; gid: string; at: string }[]> {
+  return [...(await reactionPairs(kv)).values()].filter((r): r is { kind: Kind; chat: string; gid: string; at: string } => r.kind !== null);
 }
 
 export async function setReaction(kv: KV, kind: Kind | null, chat: string, gid: string, retryMs = 1100) {
@@ -268,8 +272,9 @@ interface Update {
  * recipient's chat (falls back to marking them hidden when Telegram refuses). mineOnly: 👎 in the favourites
  * round, where the other person may still like the flat, so only this chat's post goes.
  */
-export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number, mineOnly = false) {
+export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number, mineOnly = false): Promise<boolean> {
   const liking = kind !== 'hide';
+  let matched = false;
   const before = liking ? await reactionOf(env.KV, chat, gid) : undefined;
   await setReaction(env.KV, kind, chat, gid);
   const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
@@ -281,6 +286,7 @@ export async function applyReaction(env: Env, kind: Kind, chat: string, gid: str
       if (theirs === 'like' || theirs === 'super') {
         const text = matchText(cat[gid], kind === 'super' || theirs === 'super');
         for (const c of [chat, p]) await tg(env, 'sendMessage', { chat_id: c, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: replyKeyboard });
+        matched = true;
         break;
       }
     }
@@ -293,6 +299,7 @@ export async function applyReaction(env: Env, kind: Kind, chat: string, gid: str
       await tg(env, 'editMessageReplyMarkup', { chat_id: c, message_id: id, reply_markup: keyboard(gid, kind) });
     }
   }
+  return matched;
 }
 
 export async function handleUpdate(env: Env, u: Update): Promise<void> {
@@ -432,8 +439,8 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
   if (path === '/api/note' && body.id) return json({ ok: true, note: await saveNote(env.KV, body.id, body.note ?? {}, user) });
   if (!body.id) return json({ error: 'no id' }, 400);
   if (path === '/api/react' && (body.kind === 'like' || body.kind === 'hide' || body.kind === 'super')) {
-    await applyReaction(env, body.kind, user, body.id, undefined, body.mine === true);
-    return json({ ok: true });
+    // match: this press made it 💞 (the page plays the burst).
+    return json({ ok: true, match: await applyReaction(env, body.kind, user, body.id, undefined, body.mine === true) });
   }
   if (path === '/api/undo') {
     // Takes back this user's judgement (a deleted post stays deleted; the card comes back to the deck).
@@ -455,11 +462,14 @@ export default {
     }
     if (path === '/reactions' || path === '/sync') {
       if (req.headers.get('X-Hata-Key') !== await derivedSecret(env.TELEGRAM_BOT_TOKEN, 'sync')) return new Response('forbidden', { status: 403 });
-      if (path === '/reactions') return json(await listReactions(env.KV));
+      // Taken-back pairs too (kind null), so the monitor drops them from its database.
+      const pairs = await reactionPairs(env.KV);
+      if (path === '/reactions') return json([...pairs.values()]);
       const body = await req.json() as { catalogue?: Catalogue; reactions?: { kind: Kind; chat: string; gid: string }[] };
       if (body.catalogue) await env.KV.put('catalogue', JSON.stringify(body.catalogue));
-      // Reactions recorded before the worker existed: copy the missing ones (one write each).
-      const have = new Set((await listReactions(env.KV)).map((r) => `${r.chat}:${r.gid}`));
+      // Reactions recorded before the worker existed: copy the missing ones (one write each). A pair taken
+      // back here is not missing: copying it again would undo the undo.
+      const have = new Set(pairs.keys());
       let added = 0;
       for (const r of body.reactions ?? []) {
         if (have.has(`${r.chat}:${r.gid}`)) continue;

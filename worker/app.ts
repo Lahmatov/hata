@@ -115,6 +115,9 @@ export const APP_HTML = /* html */ `<!doctype html>
   .pin.approx { border-style: dashed; opacity: .85; }
   #toast { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff;
     padding: 8px 14px; border-radius: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .boom { position: fixed; left: 50%; top: 45%; pointer-events: none; z-index: 50; line-height: 1; transform: translate(-50%, -50%); }
+  .boom.ring { width: 40px; height: 40px; border-radius: 50%; border: 6px solid #ff4f7b; }
+  .boom.dot { width: 10px; height: 10px; border-radius: 50%; }
 </style>
 </head>
 <body>
@@ -145,6 +148,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   const initData = (tg && tg.initData) || '';
   const $ = (id) => document.getElementById(id);
   const stack = $('stack');
+  let deckGen = 0;               // bumped by setMode: a deck that arrives for an older tab or filter is dropped
   let cards = [], total = 0, judged = 0, loading = false, failed = '', mode = 'all', names = {}, first = null;
   const me = String((tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || '');
   const history = [];           // [{ card, kind }] for undo
@@ -158,6 +162,31 @@ export const APP_HTML = /* html */ `<!doctype html>
   const streetUrl = (g) => 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + g[0] + ',' + g[1];
 
   const haptic = (t) => { try { tg.HapticFeedback.impactOccurred(t); } catch (e) {} };
+  // 💞 Both of you like it: a burst of hearts and sparks from the middle of the screen.
+  function boom() {
+    try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {}
+    toast('💞 Нравится вам обоим!');
+    if (!document.body.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const add = (cls, text, color) => { const e = el('div', 'boom ' + cls, text); if (color) e.style.background = color; document.body.appendChild(e); return e; };
+    const gone = (e, a) => { a.onfinish = () => e.remove(); };
+    const big = add('', '💞'); big.style.fontSize = '96px';
+    gone(big, big.animate([{ transform: 'translate(-50%,-50%) scale(.2)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.3)', opacity: 1, offset: .35 },
+      { transform: 'translate(-50%,-50%) scale(1)', opacity: 1, offset: .7 }, { transform: 'translate(-50%,-50%) scale(1.6)', opacity: 0 }], { duration: 1300, easing: 'ease-out' }));
+    const ring = add('ring');
+    gone(ring, ring.animate([{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 1 }, { transform: 'translate(-50%,-50%) scale(9)', opacity: 0 }], { duration: 700, easing: 'ease-out' }));
+    const emoji = ['❤️', '💞', '✨', '🎉', '💖', '🏠'];
+    const colors = ['#ff4f7b', '#ffb703', '#2ecc71', '#4f8cff', '#c77dff'];
+    for (let i = 0; i < 36; i++) {
+      const p = i % 2 ? add('', emoji[i % emoji.length]) : add('dot', '', colors[i % colors.length]);
+      if (i % 2) p.style.fontSize = (18 + Math.random() * 18) + 'px';
+      const a = (i / 36) * 2 * Math.PI + Math.random() * .3, r = 120 + Math.random() * 160;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      gone(p, p.animate([{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 1 },
+        { transform: 'translate(calc(-50% + ' + x + 'px), calc(-50% + ' + y + 'px)) scale(1) rotate(' + (Math.random() * 360 - 180) + 'deg)', opacity: 1, offset: .6 },
+        { transform: 'translate(calc(-50% + ' + x * 1.15 + 'px), calc(-50% + ' + (y * 1.15 + 120) + 'px)) scale(.8)', opacity: 0 }],
+        { duration: 1100 + Math.random() * 500, easing: 'cubic-bezier(.15,.7,.3,1)' }));
+    }
+  }
   function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.opacity = 0, 1800); }
   function open(url) { if (!url) return; if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank'); }
   // Telegram's own "Share" in the ⋯ menu always shares the bot; this shares the flat itself.
@@ -177,7 +206,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   async function toggleRealtor(c, btn) {
     const on = !(c.nt && c.nt.r);
     try {
-      const r = await api('/api/note', { id: c.id, note: { r: on } });
+      const r = await write('/api/note', { id: c.id, note: { r: on } });
       c.nt = r.note;
       btn.classList.toggle('on', on); btn.textContent = on ? '📨 Отправлено риелтору ✓' : '📨 Риелтору';
       haptic('light');
@@ -226,8 +255,14 @@ export const APP_HTML = /* html */ `<!doctype html>
     const save = el('button', 'btn', 'Сохранить');
     save.onclick = async () => {
       if (d.value && !s.value) s.value = 'viewing';
+      // Only the fields changed here: the other person may have edited the rest since this card loaded.
+      const note = {};
+      if (s.value !== (n.s || '')) note.s = s.value;
+      if (d.value !== (n.d || '')) note.d = d.value;
+      if (t.value !== (n.t || '')) note.t = t.value;
+      if (!Object.keys(note).length) { closeSheet(); return; }
       try {
-        const r = await api('/api/note', { id: c.id, note: { s: s.value, d: d.value, t: t.value } });
+        const r = await write('/api/note', { id: c.id, note });
         c.nt = r.note; toast('Сохранено, видно обоим'); closeSheet(); if (after) after();
       } catch (e) { toast('Не сохранилось, проверьте интернет'); }
     };
@@ -343,6 +378,14 @@ export const APP_HTML = /* html */ `<!doctype html>
     setTimeout(() => map.invalidateSize(), 200);
   }
 
+  // Writes for one card go one after another: a swipe and a quick ↩ (or two note saves) must reach the server
+  // in order. Different cards do not wait for each other.
+  const writes = {};
+  function write(path, body) {
+    const p = (writes[body.id] || Promise.resolve()).then(() => api(path, body));
+    writes[body.id] = p.catch(() => {});
+    return p;
+  }
   async function api(path, body) {
     const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ initData }, body)) });
     if (r.status === 403) throw new Error('forbidden');
@@ -353,10 +396,10 @@ export const APP_HTML = /* html */ `<!doctype html>
   async function load() {
     if (loading) return;
     loading = true;
+    const m = mode, g = deckGen;
     try {
-      const m = mode;
       const d = await api('/api/deck', { mode: m, first, both: m === 'fav' && bothOnly, ok: m === 'fav' && okOnly, exclude: cards.map((c) => c.id).concat([...sent]) });
-      if (m !== mode) return;
+      if (g !== deckGen) return;
       first = null;
       if (d.names) names = d.names;
       total = d.total + cards.length; judged = 0;
@@ -364,10 +407,13 @@ export const APP_HTML = /* html */ `<!doctype html>
       for (const c of d.cards) if (!cards.some((x) => x.id === c.id)) cards.push(c);
       failed = '';
     } catch (e) {
-      failed = e.message === 'forbidden' ? 'Нет доступа. Откройте свайпы из бота «Хата».' : 'Не удалось загрузить квартиры. Нажмите ⋯ → «Обновить страницу».';
+      if (g === deckGen) failed = e.message === 'forbidden' ? 'Нет доступа. Откройте свайпы из бота «Хата».' : 'Не удалось загрузить квартиры. Нажмите ⋯ → «Обновить страницу».';
+    } finally {
+      loading = false;
+      // The tab or a filter changed while this deck was loading: that load was skipped, so run it now.
+      if (g !== deckGen && mode !== 'rank') load();
     }
-    loading = false;
-    render();
+    if (g === deckGen) render();
   }
 
   // Who liked it: "❤️ вы · 🌟 Мария" (favourites only).
@@ -443,6 +489,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     $('both').classList.toggle('on', bothOnly);
     $('okf').classList.toggle('on', okOnly);
     $('okhint').style.display = m !== 'all' && okOnly ? 'block' : 'none';
+    deckGen++;
     cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = ''; viewed.length = 0; favTotal = null;
     if (rank) { loadRank(); return; }
     render();
@@ -596,12 +643,12 @@ export const APP_HTML = /* html */ `<!doctype html>
     card.style.transform = kind === 'super' ? 'translate(0, -130vh)'
       : 'translate(' + (kind === 'like' ? 150 : -150) + 'vw, 40px) rotate(' + (kind === 'like' ? 30 : -30) + 'deg)';
     // Favourites: swiping right on your own like just moves on (no write); undo restores the previous reaction.
-    const write = !(mode === 'fav' && (c.me === kind || (kind === 'like' && c.me === 'super')));
-    cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write, prev: c.me });
+    const send = !(mode === 'fav' && (c.me === kind || (kind === 'like' && c.me === 'super')));
+    cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write: send, prev: c.me });
     if (mode === 'fav') { if (kind === 'hide') favTotal--; else viewed.push(c); }
     if (history.length > 20) history.shift();
-    if (write) api('/api/react', { id: c.id, kind, mine: mode === 'fav' }).catch(() => toast('Не сохранилось, проверьте интернет'));
-    if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : write ? '❤️ И вам нравится' : '❤️ Оставил');
+    if (send) write('/api/react', { id: c.id, kind, mine: mode === 'fav' }).then((r) => { if (r.match) boom(); }).catch(() => toast('Не сохранилось, проверьте интернет'));
+    if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : send ? '❤️ И вам нравится' : '❤️ Оставил');
     else if (kind === 'like') toast('❤️ В избранном');
     else if (kind === 'super') toast('🌟 Суперлайк: список /super');
     setTimeout(render, 220);
@@ -618,7 +665,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     }
     cards.unshift(last.card);
     if (last.write !== false) {
-      (last.prev ? api('/api/react', { id: last.card.id, kind: last.prev }) : api('/api/undo', { id: last.card.id })).catch(() => toast('Не удалось вернуть'));
+      (last.prev ? write('/api/react', { id: last.card.id, kind: last.prev }) : write('/api/undo', { id: last.card.id })).catch(() => toast('Не удалось вернуть'));
     }
     if (last.kind === 'hide') toast('Вернул. Пост в чате уже удалён, но карточка снова здесь');
     render();

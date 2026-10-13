@@ -64,7 +64,10 @@ export async function fillNearby(store: Store, points: Point[], max = Number(pro
       });
       if (res.status === 429 || res.status === 504) { log.warn(`overpass: HTTP ${res.status}, the rest waits for the next run`); break; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      store.kvSet(key(p), nearestOf(p, ((await res.json()) as { elements?: [] }).elements ?? []));
+      const body = (await res.json()) as { elements?: []; remark?: string };
+      // Overloaded Overpass answers 200 with a "runtime error" remark and no (or partial) elements: not "nothing nearby".
+      if (body.remark && /runtime error/i.test(body.remark)) { log.warn(`overpass: ${body.remark.slice(0, 120)}; the rest waits for the next run`); break; }
+      store.kvSet(key(p), nearestOf(p, body.elements ?? []));
       done++;
     } catch (e) {
       log.warn(`overpass: ${(e as Error).message}`);

@@ -14,9 +14,9 @@ import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
 import { buildPosts, clearChats, deletePosts, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
-import { favouritesText, processUpdates } from './bot.ts';
+import { chunks, favouritesText, processUpdates } from './bot.ts';
 import { pushCatalogue, workerEnabled } from './worker-sync.ts';
-import { dealNote, historyNote, routeUrl } from './extras.ts';
+import { comparablePool, dealNote, historyNote, routeUrl } from './extras.ts';
 import { BlockedError, type Listing, type RawListing } from './types.ts';
 
 const args = process.argv.slice(2);
@@ -40,6 +40,8 @@ async function collect(store: Store, now: string) {
     const http = new PoliteHttp(adapter.id, { useCache: !flag('no-cache') });
     let count = 0;
     let details = 0;
+    let parsedTotal = 0;
+    let lastHttpError = 0;
     const takenIds = new Set<string>();
     // Search pages carry ~3 photos, the listing page all of them: listings read before photos were stored
     // are re-read, a limited number per run (--photo-backfill=N for a one-off catch-up run).
@@ -60,11 +62,13 @@ async function collect(store: Store, now: string) {
         const page = await http.get(url);
         if (page.status >= 400) {
           log.warn(`${adapter.id}: HTTP ${page.status} on ${url}, skipping this search`);
+          lastHttpError = page.status;
           continue;
         }
         const next = adapter.nextPageUrl?.(page.body, url, pageNo);
         if (next && pageNo < (adapter.maxPages ?? 3)) queue.push({ url: next, pageNo: pageNo + 1 });
         const all = adapter.parse(page.body, url);
+        parsedTotal += all.length;
         if (pageNo === 1 && !all.length) log.warn(`${adapter.id}: 0 listings parsed on ${url} (empty search or page layout changed)`);
         const parsed = all.filter((r) => (inTargetArea(r.municipality, r.neighborhood, r.address) || locationUnknown(r.municipality, r.neighborhood, r.address)));
         for (let raw of parsed) {
@@ -95,6 +99,8 @@ async function collect(store: Store, now: string) {
         }
       }
       log.info(`${adapter.id}: ${count} candidate listings (${details} listing pages read)`);
+      // Not one listing on any search page: moved URLs or a new page layout, not an empty market.
+      if (!adapter.fetchAll && !parsedTotal) failed.push(`${adapter.name} (0 listings${lastHttpError ? `, HTTP ${lastHttpError}` : ', page layout changed?'})`);
     } catch (e) {
       const reason = e instanceof BlockedError ? `blocked: ${e.detail}` : (e as Error).message;
       log.error(`${adapter.id}: ${reason}`);
@@ -212,13 +218,14 @@ async function main() {
       // Allowance used up: wait for the next run without geocoding (Nominatim is 1 request/s, thousands after a reset).
       if (!routingLeft()) { deferred.add(l.id); continue; }
       const { p, approx } = await listingPoint(store, l);
+      if (p === undefined) { deferred.add(l.id); continue; } // geocoder gave no answer: next run
       if (!p) continue;
       const min = await driveMinutes(store, p, school);
       if (min === undefined) deferred.add(l.id);
       else store.setCommute(l.id, min, approx);
     }
   }
-  if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (no answer from the router)`);
+  if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (no answer from the router or geocoder)`);
 
   // ⭐ News about favourites (cheaper, gone, back): one message; their price drops are not repeated in the digest.
   const favourites = favouriteGroups(store);
@@ -266,13 +273,7 @@ async function main() {
 
   // 🔥 deal vs. comparable flats, 💶 price history, 🗺 route to school.
   // Comparable flats: T3 of the minimum size seen in the last 60 days (any of our sources).
-  // One qualifying listing per duplicate group (the group's first listing may lack bedrooms or area).
-  const poolByGroup = new Map<string, Listing>();
-  for (const l of recent.map((r) => store.get(r.id)!)) {
-    if ((l.bedrooms ?? 0) < config.criteria.minBedrooms || (l.area_m2 ?? 0) < config.criteria.minAreaM2) continue;
-    if (!poolByGroup.has(l.group_id)) poolByGroup.set(l.group_id, l);
-  }
-  const pool = [...poolByGroup.values()];
+  const pool = comparablePool(recent.map((r) => store.get(r.id)!));
   for (const it of items) {
     it.deal = dealNote(it.leader, pool);
     it.history = historyNote(store.priceHistory(it.leader.id));
@@ -285,7 +286,8 @@ async function main() {
   if (slot === 'morning' && new Date(`${today}T12:00:00Z`).getUTCDay() === 0 && !DRY) {
     for (const [title, kind] of [['Суперлайки', 'super'], ['Избранное за неделю', 'like']] as const) {
       const text = favouritesText(store, title, kind);
-      if (text) await sendTelegram(text);
+      // A long list goes in parts (4096-character limit); a failure here must not cost the digest itself.
+      if (text) for (const part of chunks(text)) await sendTelegram(part).catch((e) => log.warn(`favourites list: ${(e as Error).message}`));
     }
   }
   if (!items.length && slot !== 'morning' && !DRY && !flag('force')) {
@@ -329,7 +331,7 @@ if (flag('telegram-chat-id')) {
 } else if (flag('catalogue')) {
   catalogueOnly().catch((e) => { log.error(e.message); process.exit(1); });
 } else if (flag('process-updates')) {
-  // Light job (every 15 min on GitHub): apply 👍/👎 presses only, no scraping.
+  // Light job (every 3 hours on GitHub): apply 👍/👎 presses only, no scraping.
   processUpdates(new Store()).catch((e) => { log.error(e.message); process.exit(1); });
 } else if (flag('clear-chat')) {
   // Deletes the bot's chat history for all recipients and marks every flat as not sent, so the next
