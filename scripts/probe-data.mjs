@@ -1,65 +1,47 @@
-// One-off check from a GitHub runner: which open-data sources for the favourites enrichment answer, and how.
-// Prints short excerpts only. Run: node scripts/probe-data.mjs
+// One-off check from a GitHub runner: open-data sources for enriching favourites (round 2). Prints excerpts only.
 const UA = 'hata-apartment-monitor/1.0 (personal, non-commercial; github.com/Lahmatov/hata)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function get(label, url, init = {}) {
-  console.log(`\n=== ${label}\n${url.slice(0, 300)}`);
+async function get(label, url, timeout = 60000) {
+  console.log(`\n=== ${label}\n${url.slice(0, 400)}`);
   try {
-    const res = await fetch(url, { ...init, headers: { 'User-Agent': UA, ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30000) });
+    const t0 = Date.now();
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(timeout) });
     const text = await res.text();
-    console.log(`HTTP ${res.status} ${res.headers.get('content-type')} ${text.length} bytes`);
-    await sleep(2000);
-    return { status: res.status, text };
-  } catch (e) {
-    console.log(`ERROR ${e.message}`);
-    return { status: 0, text: '' };
-  }
+    console.log(`HTTP ${res.status} ${res.headers.get('content-type')} ${text.length} bytes in ${Date.now() - t0} ms`);
+    await sleep(1500);
+    return text;
+  } catch (e) { console.log(`ERROR ${e.message}`); return ''; }
 }
 const json = (t) => { try { return JSON.parse(t); } catch { return null; } };
-const show = (v, n = 1500) => console.log(JSON.stringify(v, null, 1).slice(0, n));
 
-// 1. INE median sale €/m² (last 12 months), municipalities and freguesias
-const meta = await get('INE meta 0012234', 'https://www.ine.pt/ine/json_indicador/pindicaMeta.jsp?varcd=0012234&lang=PT');
-const m = json(meta.text);
-if (m) {
-  const s = JSON.stringify(m);
-  console.log(s.slice(0, 1200));
-  const geos = [...s.matchAll(/"cat_id":"(1A01(?:106|115|110|111|116)\d*)","categ_dsg":"([^"]+)"/g)].map((x) => `${x[1]}=${x[2]}`);
-  console.log('geo codes found:', geos.length, geos.slice(0, 80).join(' | '));
-}
-const muni = '1A01106,1A01115,1A01110,1A01111,1A01116';
-const d = await get('INE data municipalities', `https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234&lang=PT&Dim2=${muni}&Dim3=H1`);
-show(json(d.text), 2500);
-const f = await get('INE data freguesias (Benfica, Carnide, SDB, AMM)', 'https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234&lang=PT&Dim2=1A0110608,1A0110618,1A0110666,1A0111101&Dim3=H1');
-show(json(f.text), 2000);
-
-// 2. APA flood zones (Directive 2007/60/EC, 2nd cycle)
-for (const svc of ['SNIAmb/Diretiva200760CE_2c', 'SNIAmb/Risco_Inundacao_Potencialmente_Significativas', 'Visualizador/END_externo']) {
-  const r = await get(`APA ${svc} layers`, `https://sniambgeoogc.apambiente.pt/getogc/rest/services/${svc}/MapServer?f=json`);
-  const j = json(r.text);
-  if (j?.layers) console.log(j.layers.map((l) => `${l.id}:${l.name}`).join(' | ').slice(0, 2500));
-  else console.log(r.text.slice(0, 500));
-}
-// Odivelas centre (near the Trancão / ribeira de Odivelas) and Benfica
-for (const [name, lat, lon] of [['Odivelas', 38.7929, -9.1838], ['Benfica', 38.7505, -9.2008]]) {
-  const r = await get(`APA flood point ${name}`, `https://sniambgeoogc.apambiente.pt/getogc/rest/services/SNIAmb/Diretiva200760CE_2c/MapServer/identify?geometry=${lon},${lat}&geometryType=esriGeometryPoint&sr=4326&layers=all&tolerance=2&mapExtent=${lon - 0.01},${lat - 0.01},${lon + 0.01},${lat + 0.01}&imageDisplay=400,400,96&returnGeometry=false&f=json`);
-  console.log(r.text.slice(0, 800));
+// 1. INE: freguesia codes from the metadata (dimension 2)
+const meta = json(await get('INE meta', 'https://www.ine.pt/ine/json_indicador/pindicaMeta.jsp?varcd=0012234&lang=PT'));
+const cats = meta?.[0]?.Dimensoes?.Categoria_Dim ?? [];
+const dim2 = cats.flatMap((c) => Object.entries(c)).filter(([k]) => k.startsWith('Dim_Num2')).flatMap(([, v]) => v);
+console.log('dim2 entries:', dim2.length, 'sample:', JSON.stringify(dim2[0]));
+const ours = dim2.filter((x) => /^1A01(106|115|110|111|116)/.test(x.cat_id));
+console.log(ours.map((x) => `${x.cat_id}=${x.categ_dsg}`).join(' | '));
+const dim3 = cats.flatMap((c) => Object.entries(c)).filter(([k]) => k.startsWith('Dim_Num3')).flatMap(([, v]) => v);
+console.log('dim3:', dim3.map((x) => `${x.cat_id}=${x.categ_dsg}`).join(' | '));
+const fr = ours.filter((x) => x.cat_id.length > 7).map((x) => x.cat_id);
+for (let i = 0; i < fr.length; i += 30) {
+  const d = json(await get(`INE freguesias ${i}`, `https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234&lang=PT&Dim2=${fr.slice(i, i + 30).join(',')}&Dim3=H1`));
+  const rows = Object.values(d?.[0]?.Dados ?? {})[0] ?? [];
+  console.log(rows.map((r) => `${r.geocod} ${r.geodsg}: ${r.valor ?? r.Sinal_Conv ?? '-'}`).join('\n'));
 }
 
-// 3. Noise: EEA, Lisbon open data
-const eea = await get('EEA noise services', 'https://noise.discomap.eea.europa.eu/arcgis/rest/services/Noise?f=json');
-console.log(eea.text.slice(0, 1500));
-const eeaDyna = await get('EEA Noise_Dyna_LAEA layers', 'https://noise.discomap.eea.europa.eu/arcgis/rest/services/Noise/Noise_Dyna_LAEA/MapServer?f=json');
-const ej = json(eeaDyna.text);
-if (ej?.layers) console.log(ej.layers.map((l) => `${l.id}:${l.name}`).join(' | ').slice(0, 2500));
-const cml = await get('Lisbon open data: mapa-do-ruido', 'https://dadosabertos.cm-lisboa.pt/api/3/action/package_show?id=mapa-do-ruido');
-const cj = json(cml.text);
-if (cj?.result) console.log(cj.result.resources.map((r) => `${r.name} | ${r.format} | ${r.url}`).join('\n'));
-else console.log(cml.text.slice(0, 500));
+// 2. APA flood: query (not identify) on the flood-area and ARPSI layers, small envelope, WGS84
+for (const [name, lat, lon] of [['Odivelas centro', 38.7929, -9.1838], ['Póvoa Sto Adrião (Trancão)', 38.7998, -9.1655], ['Benfica', 38.7505, -9.2008]]) {
+  for (const [svc, layer] of [['Diretiva200760CE_2c', 0], ['Risco_Inundacao_Potencialmente_Significativas', 0]]) {
+    const t = await get(`APA ${svc}/${layer} at ${name}`, `https://sniambgeoogc.apambiente.pt/getogc/rest/services/SNIAmb/${svc}/MapServer/${layer}/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`);
+    console.log(t.slice(0, 700));
+  }
+}
 
-// 4. Overpass around Benfica
-const q = `[out:json][timeout:30];(nwr(around:1000,38.7505,-9.2008)[railway=station];nwr(around:1000,38.7505,-9.2008)[station=subway];nwr(around:800,38.7505,-9.2008)[shop=supermarket];nwr(around:800,38.7505,-9.2008)[amenity=pharmacy];nwr(around:800,38.7505,-9.2008)[leisure=park];nwr(around:800,38.7505,-9.2008)[leisure=playground];);out center tags 40;`;
-const o = await get('Overpass Benfica', 'https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-const oj = json(o.text);
-if (oj?.elements) console.log(oj.elements.map((e) => `${e.type}/${e.id} ${Object.entries(e.tags ?? {}).filter(([k]) => /^(name|railway|station|shop|amenity|leisure)$/.test(k)).map(([k, v]) => k + '=' + v).join(',')} @${e.lat ?? e.center?.lat},${e.lon ?? e.center?.lon}`).join('\n'));
-else console.log(o.text.slice(0, 500));
+// 3. EEA airport noise: all services, then airport-related layer lists and a point query near Benfica
+const svcs = json(await get('EEA Noise services', 'https://noise.discomap.eea.europa.eu/arcgis/rest/services/Noise?f=json'))?.services ?? [];
+console.log(svcs.map((s) => `${s.name}:${s.type}`).join(' | '));
+for (const s of svcs.filter((s) => /airport|air|Contour|Dyna/i.test(s.name)).slice(0, 8)) {
+  const j = json(await get(`EEA ${s.name} layers`, `https://noise.discomap.eea.europa.eu/arcgis/rest/services/${s.name}/${s.type}?f=json`));
+  console.log((j?.layers ?? []).map((l) => `${l.id}:${l.name}`).join(' | ').slice(0, 1200) || JSON.stringify(j).slice(0, 400));
+}
