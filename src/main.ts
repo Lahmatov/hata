@@ -2,11 +2,14 @@ import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { adapters } from './adapters/index.ts';
 import { EMAIL_MAX_AGE_DAYS } from './adapters/email.ts';
 import { favouriteGroups, favouriteNews, favouriteNewsText } from './favwatch.ts';
+import { refreshIne } from './ine.ts';
+import { fillNearby } from './nearby.ts';
+import { fillFlood } from './flood.ts';
 import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
 import { classify, worthEnriching } from './filter.ts';
-import { driveMinutes, listingPoint, routingLeft, schoolPoint } from './geo.ts';
+import { driveMinutes, knownPoint, listingPoint, routingLeft, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
 import { summarize } from './summarize.ts';
@@ -37,9 +40,12 @@ async function collect(store: Store, now: string) {
     const http = new PoliteHttp(adapter.id, { useCache: !flag('no-cache') });
     let count = 0;
     let details = 0;
+    const takenIds = new Set<string>();
     // Search pages carry ~3 photos, the listing page all of them: listings read before photos were stored
     // are re-read, a limited number per run (--photo-backfill=N for a one-off catch-up run).
     let photoBackfill = Number(opt('photo-backfill') ?? process.env.PHOTO_BACKFILL ?? 150);
+    // --max-detail=N caps listing pages read per source (a quick dry run checks the code, not the sites).
+    const maxDetail = Number(opt('max-detail') ?? Infinity);
     try {
       if (adapter.fetchAll) {
         const got = await adapter.fetchAll({ kvGet: (k) => store.kvGet(k), kvSet: (k, v) => store.kvSet(k, v) });
@@ -64,7 +70,12 @@ async function collect(store: Store, now: string) {
         for (let raw of parsed) {
           if (!worthEnriching(raw)) continue;
           const id = `${raw.source}:${raw.sourceId}`;
-          const needsDetail = adapter.enrich && (!store.detailDone(id, raw.price) || (!store.photosDone(id) && photoBackfill-- > 0));
+          // A developer's ad lists several units under one id with different prices: take it once per run, or every
+          // run would record each unit's price as a price change.
+          if (takenIds.has(id)) continue;
+          takenIds.add(id);
+          const needsDetail = adapter.enrich && details < maxDetail
+            && (!store.detailDone(id, raw.price) || (!store.photosDone(id) && photoBackfill-- > 0));
           let detailed = false;
           if (needsDetail) {
             try {
@@ -188,6 +199,13 @@ async function main() {
     if (DRY) console.log(favText);
     else await sendTelegram(favText).catch((e) => log.warn(`favourites news: ${(e as Error).message}`));
   }
+
+  // Sale prices (INE, weekly), what is near each favourite (OpenStreetMap) and APA flood maps, cached, for cards and the table.
+  await refreshIne(store);
+  const favPoints = store.all().filter((l) => favourites.has(l.group_id)).map((l) => knownPoint(store, l))
+    .filter((x): x is NonNullable<typeof x> => x !== null && !x.approx).map((x) => x.p);
+  await fillNearby(store, favPoints);
+  await fillFlood(store, favPoints);
 
   // Build digest: one item per duplicate group.
   const byGroup = new Map<string, DigestItem>();

@@ -37,6 +37,12 @@ jobs:
           restore-keys: |
             hata-state-
             hata-dryrun-
+      - name: Restore aircraft samples (planes workflow)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/planes.jsonl
+          key: planes-none
+          restore-keys: planes-
       - name: Find the bot worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

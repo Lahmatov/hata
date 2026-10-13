@@ -218,7 +218,8 @@ export const APP_HTML = /* html */ `<!doctype html>
       ['', (c) => { const w = el('div'); if (c.i && c.i[0]) { const im = el('img'); im.src = c.i[0]; w.appendChild(im); } w.appendChild(el('div', '', c.t || '')); return w; }],
       ['Баллы', (c) => c.q, 'max'], ['Цена', (c) => c.p, 'min', money], ['Площадь, м²', (c) => c.a && Math.round(c.a), 'max'],
       ['€/м²', ppm, 'min', money], ['Спальни', (c) => c.b, 'max'], ['До школы, мин', (c) => c.c != null ? Math.round(c.c) : null, 'min'],
-      ['Удобства', (c) => (c.e || []).join(', ') || '—'], ['Факты', (c) => c.f || ''], ['Плюс / минус', (c) => c.x || ''],
+      ['Удобства', (c) => (c.e || []).join(', ') || '—'], ['Покупка и ипотека', (c) => c.z ? c.z.replace('💶 ', '') : '—'], ['Сделки рядом (INE)', (c) => c.v ? c.v.replace('📊 ', '') : '—'],
+      ['Рядом', (c) => c.o || '—'], ['Подтопление', (c) => c.fz || '—'], ['Самолёты', (c) => c.pl || '—'], ['Факты', (c) => c.f || ''], ['Плюс / минус', (c) => c.x || ''],
       ['Кто лайкнул', (c) => whoLine(c) || '—'], ['Статус', (c) => c.nt && c.nt.s ? STATUSES[c.nt.s] : '—'], ['Заметка', (c) => (c.nt && c.nt.t) || '—'],
       ['', (c) => { const a = el('a', '', 'Открыть объявление'); a.href = '#'; a.onclick = (e) => { e.preventDefault(); open(c.u); }; return a; }],
     ];
@@ -416,6 +417,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     if (c.x && /[^➕➖—\s]/u.test(c.x)) info.appendChild(el('div', '', c.x));
     if (c.f) info.appendChild(el('div', 'facts', c.f));
     if (c.y) info.appendChild(el('div', 'why', '🏆 ' + c.q + '/100: ' + c.y));
+    if (mode === 'fav') for (const line of [c.o && '📍 ' + c.o, c.pl, c.fz, c.v, c.z]) if (line) info.appendChild(el('div', 'why', line));
     const links = el('div', 'links');
     const a1 = el('a', '', 'Открыть объявление'); a1.href = '#'; a1.onclick = (e) => { e.preventDefault(); open(c.u); };
     links.appendChild(a1);

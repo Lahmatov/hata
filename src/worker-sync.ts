@@ -6,8 +6,13 @@ import { log } from './log.ts';
 import { classify } from './filter.ts';
 import { routeUrl } from './extras.ts';
 import { knownPoint } from './geo.ts';
+import { ineLine, ineMedian, type InePrices } from './ine.ts';
+import { cachedNearby, nearbyLine } from './nearby.ts';
+import { cachedFlood, floodCell, floodLine } from './flood.ts';
+import { loadSamples, planeStats, planesLine, type Sample } from './planes.ts';
 import { factsLine, ruleBasedProsCons } from './summarize.ts';
 import { score } from './score.ts';
+import { costsLine } from './costs.ts';
 import { tableRow } from './table.ts';
 import { featuresFromText, featuresList } from './adapters/text.ts';
 import type { CardDetails, Catalogue } from '../worker/index.ts';
@@ -43,7 +48,7 @@ export async function pullReactions(store: Store): Promise<number> {
  * Flats we have sent (one per duplicate group): a small index, swipe-card details in chunks of 40, and the
  * spreadsheet rows for /export (chunks of 40 too, same numbering, so the worker reads only what it needs).
  */
-export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Catalogue; cards: Record<string, CardDetails>[]; rows: Record<string, TableCell[]>[] } {
+export function buildCatalogue(store: Store, now = Date.now(), planes: Sample[] = loadSamples()): { catalogue: Catalogue; cards: Record<string, CardDetails>[]; rows: Record<string, TableCell[]>[] } {
   const all = store.all();
   const leaders = new Map<string, Listing>();
   for (const l of all) {
@@ -52,6 +57,7 @@ export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Cat
     if (!cur || cur.last_seen <= l.last_seen) leaders.set(l.group_id, l);
   }
   const pool = all.filter((l) => now - Date.parse(l.last_seen) < 60 * 86400_000);
+  const ine = store.kvGet<InePrices>('ine:prices');
   const school = config.school.lat !== null && config.school.lon !== null ? { lat: config.school.lat, lon: config.school.lon } : null;
   const catalogue: Catalogue = {};
   const cards: Record<string, CardDetails>[] = [];
@@ -66,6 +72,9 @@ export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Cat
       c: l.commute_min, s: l.last_seen, m: store.messages(l.group_id).map((x) => [x.chatId, x.messageId]), k: c.verdict, n, q: s.total,
     };
     const pt = knownPoint(store, l);
+    const near = pt && !pt.approx ? cachedNearby(store, pt.p) : undefined;
+    const flood = pt && !pt.approx ? cachedFlood(store, pt.p) : undefined;
+    const sky = pt && !pt.approx && planes.length ? planesLine(planeStats(planes, pt.p)) : null;
     if (pt) {
       catalogue[gid].g = [Math.round(pt.p.lat * 1e5) / 1e5, Math.round(pt.p.lon * 1e5) / 1e5];
       if (pt.approx) catalogue[gid].ga = 1;
@@ -73,10 +82,10 @@ export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Cat
     (cards[n] ??= {})[gid] = {
       h: l.title, b: l.bedrooms, i: (l.images ?? (l.image ? [l.image] : [])).slice(0, 60),
       f: factsLine(l), x: ruleBasedProsCons(l), w: c.verdict === 'manual' ? c.reasons : [], r: routeUrl(l, school),
-      y: s.text, e: featuresList(f),
+      y: s.text, e: featuresList(f), z: costsLine(l.price, l.description), v: ineLine(ine, l), o: nearbyLine(near), fz: floodLine(flood), pl: sky,
     };
     const members = all.filter((m) => m.group_id === gid && now - Date.parse(m.last_seen) < 7 * 86400_000);
-    (rows[n] ??= {})[gid] = tableRow(l, c, s, { members, prices: store.priceHistory(l.id), school, now });
+    (rows[n] ??= {})[gid] = tableRow(l, c, s, { members, prices: store.priceHistory(l.id), school, now, ine: ineMedian(ine, l), near: nearbyLine(near), flood: floodCell(flood), planes: sky });
   }
   return { catalogue, cards, rows };
 }

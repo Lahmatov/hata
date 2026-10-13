@@ -1,11 +1,17 @@
 name: dry-run
 # Runs the real pipeline with --dry-run (prints the digest to the log, sends nothing).
+# Manual only (the ci workflow runs types and tests on every push). Quick by default: no photo backfill and at
+# most 20 listing pages per source; set max_detail to 0 for no cap.
 on:
   workflow_dispatch:
-  push:
-    branches: ['claude/**']
-    paths: ['src/**', '.github/workflows/dryrun.yml']
-concurrency: dry-run
+    inputs:
+      max_detail:
+        description: 'Listing pages to read per source (0 = no cap)'
+        required: false
+        default: '20'
+concurrency:
+  group: dry-run-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -33,7 +39,10 @@ jobs:
           IMAP_USER: ${{ secrets.IMAP_USER }}
           IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
           IMAP_FOLDER: ${{ secrets.IMAP_FOLDER || 'hata' }}
-        run: npx tsx src/main.ts --dry-run
+          PHOTO_BACKFILL: '0'
+        run: |
+          max="${{ github.event.inputs.max_detail || '20' }}"
+          if [ "$max" = "0" ]; then npx tsx src/main.ts --dry-run; else npx tsx src/main.ts --dry-run --max-detail="$max"; fi
       - name: Save state
         if: always()
         uses: actions/cache/save@v4
