@@ -80,6 +80,8 @@ export const APP_HTML = /* html */ `<!doctype html>
   .filters { display: none; gap: 6px; padding: 0 2px; }
   .filters button { border: 1px solid var(--card); background: var(--bg); color: var(--text); border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
   .filters button.on { background: #e0245e; border-color: #e0245e; color: #fff; font-weight: 600; }
+  .filters #okf.on { background: #1e9e57; border-color: #1e9e57; }
+  .popbtns { display: flex; gap: 6px; margin-top: 6px; } .popbtns a { padding: 5px 8px; border-radius: 8px; background: #eef3fb; text-decoration: none; font-weight: 600; }
   .quick { display: flex; gap: 8px; flex-wrap: wrap; }
   .quick button { border: 1px solid var(--card); background: var(--card); color: var(--text); border-radius: 10px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
   .quick button.on { background: rgba(46,204,113,.18); border-color: #2ecc71; color: #1e9e57; font-weight: 600; } nav button[hidden] { display: none; }
@@ -120,7 +122,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     <div class="tabs"><button data-m="all" class="on">🏠 Новые</button><button data-m="fav">⭐ Избранное</button><button data-m="rank">🏆 Рейтинг</button></div>
     <span id="left"></span>
   </header>
-  <div class="filters" id="filters"><button id="both">💞 Нравится нам обоим</button></div>
+  <div class="filters" id="filters"><button id="both">💞 Нравится обоим</button><button id="okf">✅ Всё подходит</button></div>
   <div id="stack"></div>
   <div id="rankwrap" style="position:relative;flex:1;min-height:0;display:none"><div id="rank"></div></div>
   <nav>
@@ -148,7 +150,10 @@ export const APP_HTML = /* html */ `<!doctype html>
   const viewed = [];            // favourites: cards passed (▶ or a swipe that keeps them), for ◀
   let favTotal = null;          // favourites in the list: set on the first page, minus 👎 in this session
   let bothOnly = false;         // 💞 filter: flats both of you liked (remembered on this phone)
-  try { bothOnly = localStorage.getItem('hata.both') === '1'; } catch (e) {}
+  let okOnly = false;           // ✅ filter: lift, garage, T3+, 2+ bathrooms, under 20 min to school
+  try { bothOnly = localStorage.getItem('hata.both') === '1'; okOnly = localStorage.getItem('hata.ok') === '1'; } catch (e) {}
+  // Walk around: Google Street View at the flat (Maps URL, no key); approximate when only the area is known.
+  const streetUrl = (g) => 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + g[0] + ',' + g[1];
 
   const haptic = (t) => { try { tg.HapticFeedback.impactOccurred(t); } catch (e) {} };
   function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.opacity = 0, 1800); }
@@ -290,7 +295,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   async function mapSheet(list) {
     const box = sheet('🗺 Избранное на карте');
     const m = el('div'); m.id = 'map'; box.appendChild(m);
-    box.appendChild(el('p', 'why', 'Нажмите на точку, чтобы открыть квартиру. Цена в тыс. €. 🔵 суперлайк · 🔴 нравится обоим · 🟢 одному · серый: отказ · пунктир: адрес известен только до района · 🏫 школа'));
+    box.appendChild(el('p', 'why', 'Нажмите на точку: карточка квартиры или 🚶 прогулка по улице (Google Street View). Цена в тыс. €. 🔵 суперлайк · 🔴 нравится обоим · 🟢 одному · серый: отказ · пунктир: адрес известен только до района · 🏫 школа'));
     try { await loadLeaflet(); } catch (e) { m.textContent = 'Карта не загрузилась, проверьте интернет'; return; }
     const map = L.map(m).setView(SCHOOL, 12);
     // OpenStreetMap tiles; if they keep failing (the server may refuse a request), switch to Esri's street map.
@@ -319,7 +324,15 @@ export const APP_HTML = /* html */ `<!doctype html>
       const label = c.p ? Math.round(c.p / 1000) + 'k' : '?';
       const icon = L.divIcon({ className: '', html: '<span class="pin' + (c.ga ? ' approx' : '') + '" style="background:' + color + '">' + label + '</span>', iconSize: null });
       // Tap a point: straight into that flat's card.
-      L.marker(at(c), { icon, title: (c.t || '') + ' · ' + money(c.p) }).addTo(map).on('click', () => { closeSheet(); first = c.id; setMode('fav'); });
+      const pop = el('div');
+      pop.appendChild(el('b', '', money(c.p) + (c.q != null ? ' · 🏆 ' + c.q : '') + (c.ok ? ' · ✅' : '')));
+      pop.appendChild(el('div', '', (c.t || '') + (c.c != null ? ' · 🚗 ' + Math.round(c.c) + ' мин' : '')));
+      const btns = el('div', 'popbtns');
+      const go = el('a', '', 'Карточка'); go.href = '#'; go.onclick = (e) => { e.preventDefault(); closeSheet(); first = c.id; setMode('fav'); };
+      const walk = el('a', '', c.ga ? '🚶 Погулять (район)' : '🚶 Погулять'); walk.href = '#'; walk.onclick = (e) => { e.preventDefault(); open(streetUrl(c.g)); };
+      btns.append(go, walk);
+      pop.appendChild(btns);
+      L.marker(at(c), { icon, title: (c.t || '') + ' · ' + money(c.p) }).addTo(map).bindPopup(pop);
       pts.push(at(c));
     });
     const missing = list.length - placed.length;
@@ -340,7 +353,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     loading = true;
     try {
       const m = mode;
-      const d = await api('/api/deck', { mode: m, first, both: m === 'fav' && bothOnly, exclude: cards.map((c) => c.id).concat([...sent]) });
+      const d = await api('/api/deck', { mode: m, first, both: m === 'fav' && bothOnly, ok: m === 'fav' && okOnly, exclude: cards.map((c) => c.id).concat([...sent]) });
       if (m !== mode) return;
       first = null;
       if (d.names) names = d.names;
@@ -366,7 +379,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     const box = $('rank');
     box.innerHTML = '<p style="text-align:center;color:var(--hint)">Считаю рейтинг…</p>';
     try {
-      const d = await api('/api/deck', { mode: 'fav', slim: true, both: bothOnly });
+      const d = await api('/api/deck', { mode: 'fav', slim: true, both: bothOnly, ok: okOnly });
       names = d.names || names;
       box.textContent = '';
       $('left').textContent = '';
@@ -395,7 +408,7 @@ export const APP_HTML = /* html */ `<!doctype html>
         r.appendChild(cb);
         r.appendChild(el('div', 'n', String(i + 1)));
         r.appendChild(el('div', 'l1', [money(c.p), c.a != null ? Math.round(c.a) + ' м²' : null, c.c != null ? '🚗 ' + Math.round(c.c) + ' мин' : null].filter(Boolean).join(' · ')));
-        r.appendChild(el('div', 'q', c.q != null ? String(c.q) : '–'));
+        r.appendChild(el('div', 'q', (c.ok ? '✅' : '') + (c.q != null ? String(c.q) : '–')));
         const l2 = el('div', 'l2', (c.t || '') + ' · ' + whoLine(c));
         if (c.nt) l2.appendChild(noteLine(c));
         r.appendChild(l2);
@@ -426,6 +439,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     $('prev').hidden = $('next').hidden = m !== 'fav';
     $('filters').style.display = m === 'all' ? 'none' : 'flex';
     $('both').classList.toggle('on', bothOnly);
+    $('okf').classList.toggle('on', okOnly);
     cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = ''; viewed.length = 0; favTotal = null;
     if (rank) { loadRank(); return; }
     render();
@@ -435,6 +449,11 @@ export const APP_HTML = /* html */ `<!doctype html>
   $('both').onclick = () => {
     bothOnly = !bothOnly;
     try { localStorage.setItem('hata.both', bothOnly ? '1' : '0'); } catch (e) {}
+    setMode(mode);
+  };
+  $('okf').onclick = () => {
+    okOnly = !okOnly;
+    try { localStorage.setItem('hata.ok', okOnly ? '1' : '0'); } catch (e) {}
     setMode(mode);
   };
 
@@ -481,6 +500,7 @@ export const APP_HTML = /* html */ `<!doctype html>
       rb.onclick = () => toggleRealtor(c, rb);
       const lb = el('button', '', '🔗 Ссылка'); lb.onclick = () => shareLink(c);
       quick.append(rb, lb);
+      if (c.g) { const sv = el('button', '', c.ga ? '🚶 Улица (район)' : '🚶 Улица'); sv.onclick = () => open(streetUrl(c.g)); quick.append(sv); }
       info.appendChild(quick);
     }
     info.appendChild(el('span', 'chip ' + chip[0], chip[1]));

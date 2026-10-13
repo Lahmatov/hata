@@ -26,6 +26,8 @@ export interface CatalogueItem {
   k?: string; n?: number; q?: number;
   /** Coordinates for the map: [lat, lon]; ga = 1 when only the neighbourhood is known. */
   g?: [number, number]; ga?: 1;
+  /** ok = 1: lift, garage, T3+, 2+ bathrooms and under 20 min to school (the "✅ всё подходит" filter). */
+  ok?: 1;
 }
 export type Catalogue = Record<string, CatalogueItem>;
 /**
@@ -391,7 +393,7 @@ export function favDeck(cat: Catalogue, reactions: { kind: Kind; chat: string; g
 }
 
 async function appApi(req: Request, env: Env, path: string): Promise<Response> {
-  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean; both?: boolean;
+  const body = (await req.json().catch(() => ({}))) as { initData?: string; exclude?: string[]; id?: string; kind?: Kind; mode?: 'all' | 'fav'; first?: string; slim?: boolean; mine?: boolean; both?: boolean; ok?: boolean;
     ids?: string[]; note?: { s?: unknown; t?: unknown; d?: unknown; r?: unknown } };
   const user = await verifyInitData(body.initData ?? '', env.TELEGRAM_BOT_TOKEN);
   if (!user || !chatIds(env).includes(user)) return json({ error: 'not allowed' }, 403);
@@ -401,7 +403,7 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
     const fav = body.mode === 'fav';
     const liked = (k?: Kind) => k === 'like' || k === 'super';
     const all = (fav ? favDeck : deck)(cat, await listReactions(env.KV), user)
-      .filter((c) => !exclude.has(c.id) && (!fav || !body.both || (liked(c.me) && liked(c.ot))));
+      .filter((c) => !exclude.has(c.id) && (!fav || !body.both || (liked(c.me) && liked(c.ot))) && (!fav || !body.ok || c.ok === 1));
     const notes = fav ? await listNotes(env.KV) : {};
     for (const c of all) if (notes[c.id]) c.nt = notes[c.id];
     if (fav && body.slim) return json({ total: all.length, cards: all, names: await names(env) });

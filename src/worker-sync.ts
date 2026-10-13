@@ -3,7 +3,7 @@ import { config } from './config.ts';
 import type { Reaction, Store } from './db.ts';
 import type { Listing } from './types.ts';
 import { log } from './log.ts';
-import { classify } from './filter.ts';
+import { allCriteria, classify } from './filter.ts';
 import { routeUrl } from './extras.ts';
 import { knownPoint } from './geo.ts';
 import { ineLine, ineMedian, type InePrices } from './ine.ts';
@@ -71,6 +71,7 @@ export function buildCatalogue(store: Store, now = Date.now(), planes: Sample[] 
       t: [l.neighborhood, l.municipality].filter(Boolean).join(', ') || l.title, u: l.url, p: l.price, a: l.area_m2,
       c: l.commute_min, s: l.last_seen, m: store.messages(l.group_id).map((x) => [x.chatId, x.messageId]), k: c.verdict, n, q: s.total,
     };
+    if (allCriteria(l)) catalogue[gid].ok = 1;
     const pt = knownPoint(store, l);
     const near = pt && !pt.approx ? cachedNearby(store, pt.p) : undefined;
     const flood = pt && !pt.approx ? cachedFlood(store, pt.p) : undefined;
