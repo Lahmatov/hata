@@ -65,14 +65,14 @@ test.describe('telegram worker', () => {
     }) as typeof fetch;
     try {
       const env = { KV: kv, TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1,2' };
-      await applyReaction(env, 'like', '1', 'g1');
+      expect(await applyReaction(env, 'like', '1', 'g1')).toBe(false);
       expect(sent).toEqual([]);
-      await applyReaction(env, 'super', '2', 'g1');
+      expect(await applyReaction(env, 'super', '2', 'g1')).toBe(true); // the app plays the 💞 burst
       expect(sent.map((x) => x[0])).toEqual(['2', '1']);
       expect(sent[0][1]).toContain('Совпадение');
       expect(sent[0][1]).toContain('395 тыс. € · 112 м² · 🚗 14 мин · 🏆 80');
       sent.length = 0;
-      await applyReaction(env, 'like', '2', 'g1'); // already liked: no second match
+      expect(await applyReaction(env, 'like', '2', 'g1')).toBe(false); // already liked: no second match
       await applyReaction(env, 'hide', '1', 'g1');
       expect(sent).toEqual([]);
     } finally {

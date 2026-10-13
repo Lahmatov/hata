@@ -115,6 +115,9 @@ export const APP_HTML = /* html */ `<!doctype html>
   .pin.approx { border-style: dashed; opacity: .85; }
   #toast { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff;
     padding: 8px 14px; border-radius: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .boom { position: fixed; left: 50%; top: 45%; pointer-events: none; z-index: 50; line-height: 1; transform: translate(-50%, -50%); }
+  .boom.ring { width: 40px; height: 40px; border-radius: 50%; border: 6px solid #ff4f7b; }
+  .boom.dot { width: 10px; height: 10px; border-radius: 50%; }
 </style>
 </head>
 <body>
@@ -158,6 +161,31 @@ export const APP_HTML = /* html */ `<!doctype html>
   const streetUrl = (g) => 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + g[0] + ',' + g[1];
 
   const haptic = (t) => { try { tg.HapticFeedback.impactOccurred(t); } catch (e) {} };
+  // 💞 Both of you like it: a burst of hearts and sparks from the middle of the screen.
+  function boom() {
+    try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {}
+    toast('💞 Нравится вам обоим!');
+    if (!document.body.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const add = (cls, text, color) => { const e = el('div', 'boom ' + cls, text); if (color) e.style.background = color; document.body.appendChild(e); return e; };
+    const gone = (e, a) => { a.onfinish = () => e.remove(); };
+    const big = add('', '💞'); big.style.fontSize = '96px';
+    gone(big, big.animate([{ transform: 'translate(-50%,-50%) scale(.2)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.3)', opacity: 1, offset: .35 },
+      { transform: 'translate(-50%,-50%) scale(1)', opacity: 1, offset: .7 }, { transform: 'translate(-50%,-50%) scale(1.6)', opacity: 0 }], { duration: 1300, easing: 'ease-out' }));
+    const ring = add('ring');
+    gone(ring, ring.animate([{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 1 }, { transform: 'translate(-50%,-50%) scale(9)', opacity: 0 }], { duration: 700, easing: 'ease-out' }));
+    const emoji = ['❤️', '💞', '✨', '🎉', '💖', '🏠'];
+    const colors = ['#ff4f7b', '#ffb703', '#2ecc71', '#4f8cff', '#c77dff'];
+    for (let i = 0; i < 36; i++) {
+      const p = i % 2 ? add('', emoji[i % emoji.length]) : add('dot', '', colors[i % colors.length]);
+      if (i % 2) p.style.fontSize = (18 + Math.random() * 18) + 'px';
+      const a = (i / 36) * 2 * Math.PI + Math.random() * .3, r = 120 + Math.random() * 160;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      gone(p, p.animate([{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 1 },
+        { transform: 'translate(calc(-50% + ' + x + 'px), calc(-50% + ' + y + 'px)) scale(1) rotate(' + (Math.random() * 360 - 180) + 'deg)', opacity: 1, offset: .6 },
+        { transform: 'translate(calc(-50% + ' + x * 1.15 + 'px), calc(-50% + ' + (y * 1.15 + 120) + 'px)) scale(.8)', opacity: 0 }],
+        { duration: 1100 + Math.random() * 500, easing: 'cubic-bezier(.15,.7,.3,1)' }));
+    }
+  }
   function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.opacity = 0, 1800); }
   function open(url) { if (!url) return; if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank'); }
   // Telegram's own "Share" in the ⋯ menu always shares the bot; this shares the flat itself.
@@ -600,7 +628,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write, prev: c.me });
     if (mode === 'fav') { if (kind === 'hide') favTotal--; else viewed.push(c); }
     if (history.length > 20) history.shift();
-    if (write) api('/api/react', { id: c.id, kind, mine: mode === 'fav' }).catch(() => toast('Не сохранилось, проверьте интернет'));
+    if (write) api('/api/react', { id: c.id, kind, mine: mode === 'fav' }).then((r) => { if (r.match) boom(); }).catch(() => toast('Не сохранилось, проверьте интернет'));
     if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : write ? '❤️ И вам нравится' : '❤️ Оставил');
     else if (kind === 'like') toast('❤️ В избранном');
     else if (kind === 'super') toast('🌟 Суперлайк: список /super');

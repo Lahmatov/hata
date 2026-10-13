@@ -268,8 +268,9 @@ interface Update {
  * recipient's chat (falls back to marking them hidden when Telegram refuses). mineOnly: 👎 in the favourites
  * round, where the other person may still like the flat, so only this chat's post goes.
  */
-export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number, mineOnly = false) {
+export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number, mineOnly = false): Promise<boolean> {
   const liking = kind !== 'hide';
+  let matched = false;
   const before = liking ? await reactionOf(env.KV, chat, gid) : undefined;
   await setReaction(env.KV, kind, chat, gid);
   const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
@@ -281,6 +282,7 @@ export async function applyReaction(env: Env, kind: Kind, chat: string, gid: str
       if (theirs === 'like' || theirs === 'super') {
         const text = matchText(cat[gid], kind === 'super' || theirs === 'super');
         for (const c of [chat, p]) await tg(env, 'sendMessage', { chat_id: c, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: replyKeyboard });
+        matched = true;
         break;
       }
     }
@@ -293,6 +295,7 @@ export async function applyReaction(env: Env, kind: Kind, chat: string, gid: str
       await tg(env, 'editMessageReplyMarkup', { chat_id: c, message_id: id, reply_markup: keyboard(gid, kind) });
     }
   }
+  return matched;
 }
 
 export async function handleUpdate(env: Env, u: Update): Promise<void> {
@@ -432,8 +435,8 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
   if (path === '/api/note' && body.id) return json({ ok: true, note: await saveNote(env.KV, body.id, body.note ?? {}, user) });
   if (!body.id) return json({ error: 'no id' }, 400);
   if (path === '/api/react' && (body.kind === 'like' || body.kind === 'hide' || body.kind === 'super')) {
-    await applyReaction(env, body.kind, user, body.id, undefined, body.mine === true);
-    return json({ ok: true });
+    // match: this press made it 💞 (the page plays the burst).
+    return json({ ok: true, match: await applyReaction(env, body.kind, user, body.id, undefined, body.mine === true) });
   }
   if (path === '/api/undo') {
     // Takes back this user's judgement (a deleted post stays deleted; the card comes back to the deck).
