@@ -4,6 +4,7 @@ import { EMAIL_MAX_AGE_DAYS } from './adapters/email.ts';
 import { favouriteGroups, favouriteNews, favouriteNewsText } from './favwatch.ts';
 import { refreshIne } from './ine.ts';
 import { fillNearby } from './nearby.ts';
+import { fillFlood } from './flood.ts';
 import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
@@ -191,11 +192,12 @@ async function main() {
     else await sendTelegram(favText).catch((e) => log.warn(`favourites news: ${(e as Error).message}`));
   }
 
-  // Sale prices (INE, weekly) and what is near each favourite (OpenStreetMap, cached), for cards and the table.
+  // Sale prices (INE, weekly), what is near each favourite (OpenStreetMap) and APA flood maps, cached, for cards and the table.
   await refreshIne(store);
   const favPoints = store.all().filter((l) => favourites.has(l.group_id)).map((l) => knownPoint(store, l))
     .filter((x): x is NonNullable<typeof x> => x !== null && !x.approx).map((x) => x.p);
   await fillNearby(store, favPoints);
+  await fillFlood(store, favPoints);
 
   // Build digest: one item per duplicate group.
   const byGroup = new Map<string, DigestItem>();

@@ -32,7 +32,7 @@ export type Catalogue = Record<string, CatalogueItem>;
  * Swipe-card details (keys 'cards:<n>', ~40 flats each): title, bedrooms, photos, facts, plus/minus, unknowns,
  * route, rating breakdown, extras found in the ad text.
  */
-export interface CardDetails { h?: string; b?: number | null; i?: string[]; f?: string; x?: string; w?: string[]; r?: string | null; y?: string; e?: string[]; z?: string | null; v?: string | null; o?: string | null }
+export interface CardDetails { h?: string; b?: number | null; i?: string[]; f?: string; x?: string; w?: string[]; r?: string | null; y?: string; e?: string[]; z?: string | null; v?: string | null; o?: string | null; fz?: string | null }
 // Free plan: 10 ms CPU per request, so the deck never parses all photos at once, only the chunks it shows.
 type Kind = 'like' | 'hide' | 'super';
 

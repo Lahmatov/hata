@@ -31,3 +31,27 @@ test('INE: parish median when published, else the municipality; the gap in perce
   expect(ineMedian({ ...prices, parish: { '1A01106': { 'sao domingos de benfica': 5182 } } }, { municipality: 'Lisboa', neighborhood: 'Benfica' })?.v).toBe(5082);
   expect(ineLine(prices, mk({ municipality: 'Amadora', neighborhood: 'Venteira', price_per_m2: 3457 }))).toBe('📊 сделки в Amadora: 3 143 €/м² (INE, 12 мес.), эта на 10% дороже');
 });
+
+test('flood: extent with the shortest return period, else a risk area within 500 m, else nothing', async () => {
+  const { floodAt, floodCell, floodLine } = await import('../src/flood.ts');
+  const orig = globalThis.fetch;
+  const urls: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    urls.push(String(url));
+    const body = String(url).includes('Diretiva200760CE_2c/MapServer/1/')
+      ? { features: [{ attributes: { pretorno: 'T100' } }, { attributes: { pretorno: '20' } }] }
+      : { features: [{ attributes: { name: 'LOURES E PARTE DE ODIVELAS (TRANCÃO)' } }] };
+    return new Response(JSON.stringify(body));
+  }) as typeof fetch;
+  try {
+    const f = await floodAt({ lat: 38.7929, lon: -9.1838 });
+    expect(f).toEqual({ periods: [20, 100], near: ['LOURES E PARTE DE ODIVELAS (TRANCÃO)'] });
+    expect(urls[1]).toContain('distance=500');
+    expect(floodLine(f)).toBe('🌊 в зоне затопления APA (паводок раз в 20 лет)');
+    expect(floodLine({ periods: [], near: f.near })).toBe('🌊 до 500 м зона риска подтопления: Loures E Parte De Odivelas (Trancão)');
+    expect(floodCell({ periods: [], near: [] })).toBe('нет на картах APA');
+    expect(floodCell(undefined)).toBe('');
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
