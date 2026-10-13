@@ -35,12 +35,15 @@ async function api<T>(url: string, init: RequestInit = {}, attempts = 3): Promis
   throw err;
 }
 
-/** Nominatim (OSM) geocoding, ≤1 req/s per its usage policy, cached forever. */
-export async function geocode(store: Store, query: string): Promise<Point | null> {
+/**
+ * Nominatim (OSM) geocoding, ≤1 req/s per its usage policy, cached forever. null: not found; undefined: no
+ * answer (an error, or blocked in this run), so ask again on a later run.
+ */
+export async function geocode(store: Store, query: string): Promise<Point | null | undefined> {
   const key = `geo:${query.toLowerCase()}`;
   const cached = store.kvGet<Point | null>(key);
   if (cached !== undefined) return cached;
-  if (nominatimBlocked) return null;
+  if (nominatimBlocked) return undefined;
   const wait = lastNominatim + 1100 - Date.now();
   if (wait > 0) await sleep(wait);
   lastNominatim = Date.now();
@@ -56,7 +59,7 @@ export async function geocode(store: Store, query: string): Promise<Point | null
       nominatimBlocked = true;
       log.warn(`nominatim: blocked (${msg.slice(0, 8)}), no more geocoding in this run`);
     } else log.warn(`geocode failed for "${query}": ${msg}`);
-    return null;
+    return undefined;
   }
 }
 
@@ -140,12 +143,16 @@ export function knownPoint(store: Store, l: Listing): { p: Point; approx: boolea
   return area ? { p: area, approx: true } : null;
 }
 
-/** Listing location: exact coords if the source gives them, else geocoded parish/municipality (approximate). */
-export async function listingPoint(store: Store, l: Listing): Promise<{ p: Point | null; approx: boolean }> {
+/**
+ * Listing location: exact coords if the source gives them, else geocoded parish/municipality (approximate).
+ * p undefined: the address lookup got no answer; try again later rather than settle for the parish centre.
+ */
+export async function listingPoint(store: Store, l: Listing): Promise<{ p: Point | null | undefined; approx: boolean }> {
   if (l.lat !== null && l.lon !== null) return { p: { lat: l.lat, lon: l.lon }, approx: !l.address };
   if (l.address) {
     const p = await geocode(store, [l.address, l.municipality, 'Portugal'].filter(Boolean).join(', '));
     if (p) return { p, approx: false };
+    if (p === undefined) return { p, approx: false };
   }
   const q = [l.neighborhood, l.municipality, 'Portugal'].filter(Boolean).join(', ');
   return { p: q.length > 'Portugal'.length + 2 ? await geocode(store, q) : null, approx: true };

@@ -96,8 +96,8 @@ test('nominatim: after a 429 the run stops geocoding (blocked), and nothing is c
   let calls = 0;
   globalThis.fetch = (async () => { calls++; return new Response('slow down', { status: 429 }); }) as typeof fetch;
   try {
-    expect(await geocode(store, 'Rua A, Benfica')).toBeNull();
-    expect(await geocode(store, 'Rua B, Carnide')).toBeNull();
+    expect(await geocode(store, 'Rua A, Benfica')).toBeUndefined(); // no answer: asked again next run
+    expect(await geocode(store, 'Rua B, Carnide')).toBeUndefined();
     expect(calls).toBe(1); // no retries, no second address
     expect(store.kvGet('geo:rua a, benfica')).toBeUndefined();
   } finally {

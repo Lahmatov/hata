@@ -105,9 +105,10 @@ export class Store {
     const old = (this.db.prepare('SELECT group_id FROM listings WHERE id = ?').get(id) as { group_id: string } | undefined)?.group_id;
     if (old === groupId) return;
     this.db.prepare('UPDATE listings SET group_id = ? WHERE id = ?').run(groupId, id);
-    // Reactions are kept per group: a flat that moves to another group (a duplicate split off after a price
-    // change, or groups merged under a new leader) keeps its 👍/👎. The new group's own reactions win.
-    if (old) this.db.prepare('INSERT OR IGNORE INTO reactions SELECT ?, kind, chat_id, at FROM reactions WHERE group_id = ?').run(groupId, old);
+    // Reactions are kept per group: a flat that becomes its own group (a duplicate split off after a price
+    // change, or its leader no longer seen) keeps its 👍/👎; the new group's own reactions win. Not when it joins
+    // another flat's group: the fuzzy match can pair two units of one building, and a 👎 would hide the other.
+    if (old && groupId === id) this.db.prepare('INSERT OR IGNORE INTO reactions SELECT ?, kind, chat_id, at FROM reactions WHERE group_id = ?').run(groupId, old);
   }
 
   setCommute(id: string, minutes: number | null, approx: boolean) {

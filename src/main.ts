@@ -218,13 +218,14 @@ async function main() {
       // Allowance used up: wait for the next run without geocoding (Nominatim is 1 request/s, thousands after a reset).
       if (!routingLeft()) { deferred.add(l.id); continue; }
       const { p, approx } = await listingPoint(store, l);
+      if (p === undefined) { deferred.add(l.id); continue; } // geocoder gave no answer: next run
       if (!p) continue;
       const min = await driveMinutes(store, p, school);
       if (min === undefined) deferred.add(l.id);
       else store.setCommute(l.id, min, approx);
     }
   }
-  if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (no answer from the router)`);
+  if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (no answer from the router or geocoder)`);
 
   // ⭐ News about favourites (cheaper, gone, back): one message; their price drops are not repeated in the digest.
   const favourites = favouriteGroups(store);

@@ -378,11 +378,12 @@ export const APP_HTML = /* html */ `<!doctype html>
     setTimeout(() => map.invalidateSize(), 200);
   }
 
-  // Writes go one after another: a swipe and a quick ↩ (or two note saves) must reach the server in order.
-  let writes = Promise.resolve();
+  // Writes for one card go one after another: a swipe and a quick ↩ (or two note saves) must reach the server
+  // in order. Different cards do not wait for each other.
+  const writes = {};
   function write(path, body) {
-    const p = writes.then(() => api(path, body));
-    writes = p.catch(() => {});
+    const p = (writes[body.id] || Promise.resolve()).then(() => api(path, body));
+    writes[body.id] = p.catch(() => {});
     return p;
   }
   async function api(path, body) {

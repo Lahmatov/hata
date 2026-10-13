@@ -44,4 +44,9 @@ test('a flat that moves to another duplicate group keeps its 👍/👎; the new 
   expect(store.reactions('super').has('idealista:B2')).toBe(true);
   expect(store.reactions('like').has('idealista:B2')).toBe(false);
   expect(store.reactions('hide').has('imovirtual:A1')).toBe(true); // the old group keeps them too
+  // Joining another flat's group copies nothing: B2's 👎 must not hide A1 for the other person.
+  store.setReaction('idealista:B2', 'hide', '2');
+  store.setGroup('idealista:B2', 'imovirtual:A1');
+  expect(store.reactions('hide').has('imovirtual:A1')).toBe(true);
+  expect(store.reactionRows('hide').filter((r) => r.gid === 'imovirtual:A1').map((r) => r.chat)).toEqual(['1']);
 });
