@@ -27,5 +27,7 @@ test('INE: parish median when published, else the municipality; the gap in perce
   expect(ineMedian(prices, { municipality: 'Amadora', neighborhood: 'Venteira' })).toEqual({ v: 3143, where: 'Amadora' });
   expect(ineMedian({ ...prices, muni: { ...prices.muni, '1A01110': 4297 } }, { municipality: 'Oeiras', neighborhood: 'Carnaxide e Queijas' })?.v).toBe(3988);
   expect(ineMedian(prices, { municipality: 'Cascais', neighborhood: 'Parede' })).toBeNull();
+  // Benfica hidden by INE (few sales): no fallback to São Domingos de Benfica, the municipality instead.
+  expect(ineMedian({ ...prices, parish: { '1A01106': { 'sao domingos de benfica': 5182 } } }, { municipality: 'Lisboa', neighborhood: 'Benfica' })?.v).toBe(5082);
   expect(ineLine(prices, mk({ municipality: 'Amadora', neighborhood: 'Venteira', price_per_m2: 3457 }))).toBe('📊 сделки в Amadora: 3 143 €/м² (INE, 12 мес.), эта на 10% дороже');
 });
