@@ -4,8 +4,8 @@ import type { Point } from './geo.ts';
 import { log } from './log.ts';
 
 // Low aircraft over Greater Lisbon from the OpenSky Network's public REST API (anonymous, ~400 requests a day;
-// "The OpenSky Network, https://opensky-network.org"). A GitHub job samples the sky every 20 s for an hour, twice a
-// day, and keeps aircraft below 1200 m; for each flat we count how often a track passed within 1 km below 1000 m.
+// "The OpenSky Network, https://opensky-network.org"). A GitHub job samples the sky every 20 s for an hour once a
+// day (morning or evening, alternating), and keeps aircraft below 1200 m; for each flat we count how often a track passed within 1 km below 1000 m.
 // Both landing directions show up as the wind changes. Samples older than 14 days are dropped.
 
 export const PLANES_FILE = `${config.dataDir}/planes.jsonl`;
