@@ -27,3 +27,15 @@ test.describe('deal, price history, route', () => {
     expect(routeUrl(mk(), null)).toBeNull();
   });
 });
+
+test('price comparison: a flat on three portals counts once, and never as its own peer', async () => {
+  const { comparablePool, localMedian } = await import('../src/extras.ts');
+  const self = ['a', 'b', 'c'].map((s) => mk({ id: `${s}:1`, group_id: 'a:1', neighborhood: 'Benfica', price_per_m2: 4000 }));
+  const others = [1, 2, 3, 4].map((i) => mk({ id: `o:${i}`, neighborhood: 'Benfica', price_per_m2: 5000 }));
+  const small = mk({ id: 's:1', neighborhood: 'Benfica', price_per_m2: 1000, bedrooms: 2 });
+  const pool = comparablePool([...self, ...others, small]);
+  expect(pool.map((l) => l.id)).toEqual(['a:1', 'o:1', 'o:2', 'o:3', 'o:4']);
+  // 4 real peers in Benfica are too few: the municipality instead (the same 4, still without the flat itself).
+  expect(localMedian(self[1], pool)).toBeNull();
+  expect(localMedian(self[1], [...pool, ...[5, 6].map((i) => mk({ id: `o:${i}`, neighborhood: 'Benfica', price_per_m2: 5000 }))])?.n).toBe(6);
+});

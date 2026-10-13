@@ -102,7 +102,12 @@ export class Store {
   }
 
   setGroup(id: string, groupId: string) {
+    const old = (this.db.prepare('SELECT group_id FROM listings WHERE id = ?').get(id) as { group_id: string } | undefined)?.group_id;
+    if (old === groupId) return;
     this.db.prepare('UPDATE listings SET group_id = ? WHERE id = ?').run(groupId, id);
+    // Reactions are kept per group: a flat that moves to another group (a duplicate split off after a price
+    // change, or groups merged under a new leader) keeps its 👍/👎. The new group's own reactions win.
+    if (old) this.db.prepare('INSERT OR IGNORE INTO reactions SELECT ?, kind, chat_id, at FROM reactions WHERE group_id = ?').run(groupId, old);
   }
 
   setCommute(id: string, minutes: number | null, approx: boolean) {
@@ -134,6 +139,10 @@ export class Store {
   /** 👍 / 👎 from Telegram buttons, one per person per flat (the latest wins). */
   setReaction(groupId: string, kind: Reaction, chatId: string) {
     this.db.prepare('INSERT OR REPLACE INTO reactions VALUES (?, ?, ?, ?)').run(groupId, kind, chatId, new Date().toISOString());
+  }
+
+  removeReaction(groupId: string, chatId: string) {
+    this.db.prepare('DELETE FROM reactions WHERE group_id = ? AND chat_id = ?').run(groupId, chatId);
   }
 
   reactionRows(kind: Reaction): { chat: string; gid: string }[] {

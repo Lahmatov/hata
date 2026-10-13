@@ -28,3 +28,20 @@ test('favourites news: first look is silent, then cheaper, gone and back', () =>
   store.upsert(raw({ price: 385000 }), day(6).toISOString());
   expect(favouriteNews(store, day(6).getTime())[0]).toContain('✅');
 });
+
+test('a flat that moves to another duplicate group keeps its 👍/👎; the new group\'s own reactions win', () => {
+  const store = new Store(':memory:');
+  const now = '2026-10-10T08:00:00Z';
+  store.upsert(raw(), now);
+  store.upsert(raw({ source: 'idealista', sourceId: 'B2', url: 'https://x/b2' }), now);
+  store.setGroup('idealista:B2', 'imovirtual:A1');
+  store.setReaction('imovirtual:A1', 'hide', '1');
+  store.setReaction('imovirtual:A1', 'like', '2');
+  store.setReaction('idealista:B2', 'super', '2'); // left over from before the merge
+  // B2's price dropped on idealista, so it no longer matches A1: back in a group of its own.
+  store.setGroup('idealista:B2', 'idealista:B2');
+  expect(store.reactions('hide').has('idealista:B2')).toBe(true);
+  expect(store.reactions('super').has('idealista:B2')).toBe(true);
+  expect(store.reactions('like').has('idealista:B2')).toBe(false);
+  expect(store.reactions('hide').has('imovirtual:A1')).toBe(true); // the old group keeps them too
+});

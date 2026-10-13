@@ -148,6 +148,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   const initData = (tg && tg.initData) || '';
   const $ = (id) => document.getElementById(id);
   const stack = $('stack');
+  let deckGen = 0;               // bumped by setMode: a deck that arrives for an older tab or filter is dropped
   let cards = [], total = 0, judged = 0, loading = false, failed = '', mode = 'all', names = {}, first = null;
   const me = String((tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || '');
   const history = [];           // [{ card, kind }] for undo
@@ -205,7 +206,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   async function toggleRealtor(c, btn) {
     const on = !(c.nt && c.nt.r);
     try {
-      const r = await api('/api/note', { id: c.id, note: { r: on } });
+      const r = await write('/api/note', { id: c.id, note: { r: on } });
       c.nt = r.note;
       btn.classList.toggle('on', on); btn.textContent = on ? '📨 Отправлено риелтору ✓' : '📨 Риелтору';
       haptic('light');
@@ -254,8 +255,14 @@ export const APP_HTML = /* html */ `<!doctype html>
     const save = el('button', 'btn', 'Сохранить');
     save.onclick = async () => {
       if (d.value && !s.value) s.value = 'viewing';
+      // Only the fields changed here: the other person may have edited the rest since this card loaded.
+      const note = {};
+      if (s.value !== (n.s || '')) note.s = s.value;
+      if (d.value !== (n.d || '')) note.d = d.value;
+      if (t.value !== (n.t || '')) note.t = t.value;
+      if (!Object.keys(note).length) { closeSheet(); return; }
       try {
-        const r = await api('/api/note', { id: c.id, note: { s: s.value, d: d.value, t: t.value } });
+        const r = await write('/api/note', { id: c.id, note });
         c.nt = r.note; toast('Сохранено, видно обоим'); closeSheet(); if (after) after();
       } catch (e) { toast('Не сохранилось, проверьте интернет'); }
     };
@@ -371,6 +378,13 @@ export const APP_HTML = /* html */ `<!doctype html>
     setTimeout(() => map.invalidateSize(), 200);
   }
 
+  // Writes go one after another: a swipe and a quick ↩ (or two note saves) must reach the server in order.
+  let writes = Promise.resolve();
+  function write(path, body) {
+    const p = writes.then(() => api(path, body));
+    writes = p.catch(() => {});
+    return p;
+  }
   async function api(path, body) {
     const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ initData }, body)) });
     if (r.status === 403) throw new Error('forbidden');
@@ -381,10 +395,10 @@ export const APP_HTML = /* html */ `<!doctype html>
   async function load() {
     if (loading) return;
     loading = true;
+    const m = mode, g = deckGen;
     try {
-      const m = mode;
       const d = await api('/api/deck', { mode: m, first, both: m === 'fav' && bothOnly, ok: m === 'fav' && okOnly, exclude: cards.map((c) => c.id).concat([...sent]) });
-      if (m !== mode) return;
+      if (g !== deckGen) return;
       first = null;
       if (d.names) names = d.names;
       total = d.total + cards.length; judged = 0;
@@ -392,10 +406,13 @@ export const APP_HTML = /* html */ `<!doctype html>
       for (const c of d.cards) if (!cards.some((x) => x.id === c.id)) cards.push(c);
       failed = '';
     } catch (e) {
-      failed = e.message === 'forbidden' ? 'Нет доступа. Откройте свайпы из бота «Хата».' : 'Не удалось загрузить квартиры. Нажмите ⋯ → «Обновить страницу».';
+      if (g === deckGen) failed = e.message === 'forbidden' ? 'Нет доступа. Откройте свайпы из бота «Хата».' : 'Не удалось загрузить квартиры. Нажмите ⋯ → «Обновить страницу».';
+    } finally {
+      loading = false;
+      // The tab or a filter changed while this deck was loading: that load was skipped, so run it now.
+      if (g !== deckGen && mode !== 'rank') load();
     }
-    loading = false;
-    render();
+    if (g === deckGen) render();
   }
 
   // Who liked it: "❤️ вы · 🌟 Мария" (favourites only).
@@ -471,6 +488,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     $('both').classList.toggle('on', bothOnly);
     $('okf').classList.toggle('on', okOnly);
     $('okhint').style.display = m !== 'all' && okOnly ? 'block' : 'none';
+    deckGen++;
     cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = ''; viewed.length = 0; favTotal = null;
     if (rank) { loadRank(); return; }
     render();
@@ -624,12 +642,12 @@ export const APP_HTML = /* html */ `<!doctype html>
     card.style.transform = kind === 'super' ? 'translate(0, -130vh)'
       : 'translate(' + (kind === 'like' ? 150 : -150) + 'vw, 40px) rotate(' + (kind === 'like' ? 30 : -30) + 'deg)';
     // Favourites: swiping right on your own like just moves on (no write); undo restores the previous reaction.
-    const write = !(mode === 'fav' && (c.me === kind || (kind === 'like' && c.me === 'super')));
-    cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write, prev: c.me });
+    const send = !(mode === 'fav' && (c.me === kind || (kind === 'like' && c.me === 'super')));
+    cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write: send, prev: c.me });
     if (mode === 'fav') { if (kind === 'hide') favTotal--; else viewed.push(c); }
     if (history.length > 20) history.shift();
-    if (write) api('/api/react', { id: c.id, kind, mine: mode === 'fav' }).then((r) => { if (r.match) boom(); }).catch(() => toast('Не сохранилось, проверьте интернет'));
-    if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : write ? '❤️ И вам нравится' : '❤️ Оставил');
+    if (send) write('/api/react', { id: c.id, kind, mine: mode === 'fav' }).then((r) => { if (r.match) boom(); }).catch(() => toast('Не сохранилось, проверьте интернет'));
+    if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : send ? '❤️ И вам нравится' : '❤️ Оставил');
     else if (kind === 'like') toast('❤️ В избранном');
     else if (kind === 'super') toast('🌟 Суперлайк: список /super');
     setTimeout(render, 220);
@@ -646,7 +664,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     }
     cards.unshift(last.card);
     if (last.write !== false) {
-      (last.prev ? api('/api/react', { id: last.card.id, kind: last.prev }) : api('/api/undo', { id: last.card.id })).catch(() => toast('Не удалось вернуть'));
+      (last.prev ? write('/api/react', { id: last.card.id, kind: last.prev }) : write('/api/undo', { id: last.card.id })).catch(() => toast('Не удалось вернуть'));
     }
     if (last.kind === 'hide') toast('Вернул. Пост в чате уже удалён, но карточка снова здесь');
     render();

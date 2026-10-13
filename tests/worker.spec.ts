@@ -209,4 +209,19 @@ test.describe('swipe app', () => {
     await setReaction(kv, null, '1', 'imovirtual:ID9');
     expect((await listReactions(kv)).map((r) => `${r.kind}:${r.chat}`)).toEqual(['super:2']);
   });
+
+  test('/sync after an undo does not bring the like back; /reactions reports the undo so the monitor drops it', async () => {
+    const kv = memKV();
+    const env = { KV: kv, TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1,2' };
+    const key = await derivedSecret('t', 'sync');
+    const call = async (path: string, body?: unknown) => (await worker.fetch(new Request(`https://w${path}`, {
+      method: 'POST', headers: { 'X-Hata-Key': key }, body: body ? JSON.stringify(body) : undefined }), env)).json();
+    await setReaction(kv, 'like', '1', 'g1');
+    await setReaction(kv, null, '1', 'g1'); // ↩ in the app
+    // The monitor's database still has the like (pulled before the undo), plus one the worker never saw.
+    const r = await call('/sync', { reactions: [{ kind: 'like', chat: '1', gid: 'g1' }, { kind: 'hide', chat: '1', gid: 'g2' }] });
+    expect(r).toEqual({ ok: true, added: 1 });
+    expect((await listReactions(kv)).map((x) => `${x.kind}:${x.gid}`)).toEqual(['hide:g2']);
+    expect(await call('/reactions')).toEqual([{ kind: null, chat: '1', gid: 'g1', at: '' }, expect.objectContaining({ kind: 'hide', gid: 'g2' })]);
+  });
 });

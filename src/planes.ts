@@ -34,7 +34,10 @@ export function lowAircraft(states: State[] | null | undefined): Sample['a'] {
 export function loadSamples(file = PLANES_FILE, now = Date.now()): Sample[] {
   if (!existsSync(file)) return [];
   const since = now / 1000 - KEEP_DAYS * 86400;
-  return readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Sample).filter((s) => s.t >= since);
+  // A line cut short (a job killed mid-write) is skipped; collect() then rewrites the file without it.
+  return readFileSync(file, 'utf8').split('\n').filter(Boolean).flatMap((l) => {
+    try { return [JSON.parse(l) as Sample]; } catch { return []; }
+  }).filter((s) => s.t >= since);
 }
 
 /** Samples the sky every `every` seconds for `minutes`; stops on 429/403 (rate limit or block). */

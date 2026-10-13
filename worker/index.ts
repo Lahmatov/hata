@@ -79,8 +79,9 @@ async function listAll(kv: KV, prefix: string) {
   return keys;
 }
 
-export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string; gid: string; at: string }[]> {
-  const byPair = new Map<string, { kind: Kind; chat: string; gid: string; at: string }>();
+/** Every person-and-flat pair with a press; kind null = taken back (undo). */
+async function reactionPairs(kv: KV): Promise<Map<string, { kind: Kind | null; chat: string; gid: string; at: string }>> {
+  const byPair = new Map<string, { kind: Kind | null; chat: string; gid: string; at: string }>();
   for (const k of await listAll(kv, 'r:')) {
     const [, kind, chat, ...rest] = k.name.split(':');
     const gid = rest.join(':');
@@ -89,11 +90,14 @@ export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string;
   for (const k of await listAll(kv, 'v:')) {
     const [, chat, ...rest] = k.name.split(':');
     const meta = (k.metadata ?? {}) as { kind?: Kind; at?: string };
-    const pair = `${chat}:${rest.join(':')}`;
-    if (!meta.kind) byPair.delete(pair); // taken back (undo), also hides an older r: key
-    else byPair.set(pair, { kind: meta.kind, chat, gid: rest.join(':'), at: meta.at ?? '' });
+    // No kind: taken back (undo), also hides an older r: key.
+    byPair.set(`${chat}:${rest.join(':')}`, { kind: meta.kind ?? null, chat, gid: rest.join(':'), at: meta.at ?? '' });
   }
-  return [...byPair.values()];
+  return byPair;
+}
+
+export async function listReactions(kv: KV): Promise<{ kind: Kind; chat: string; gid: string; at: string }[]> {
+  return [...(await reactionPairs(kv)).values()].filter((r): r is { kind: Kind; chat: string; gid: string; at: string } => r.kind !== null);
 }
 
 export async function setReaction(kv: KV, kind: Kind | null, chat: string, gid: string, retryMs = 1100) {
@@ -458,11 +462,14 @@ export default {
     }
     if (path === '/reactions' || path === '/sync') {
       if (req.headers.get('X-Hata-Key') !== await derivedSecret(env.TELEGRAM_BOT_TOKEN, 'sync')) return new Response('forbidden', { status: 403 });
-      if (path === '/reactions') return json(await listReactions(env.KV));
+      // Taken-back pairs too (kind null), so the monitor drops them from its database.
+      const pairs = await reactionPairs(env.KV);
+      if (path === '/reactions') return json([...pairs.values()]);
       const body = await req.json() as { catalogue?: Catalogue; reactions?: { kind: Kind; chat: string; gid: string }[] };
       if (body.catalogue) await env.KV.put('catalogue', JSON.stringify(body.catalogue));
-      // Reactions recorded before the worker existed: copy the missing ones (one write each).
-      const have = new Set((await listReactions(env.KV)).map((r) => `${r.chat}:${r.gid}`));
+      // Reactions recorded before the worker existed: copy the missing ones (one write each). A pair taken
+      // back here is not missing: copying it again would undo the undo.
+      const have = new Set(pairs.keys());
       let added = 0;
       for (const r of body.reactions ?? []) {
         if (have.has(`${r.chat}:${r.gid}`)) continue;

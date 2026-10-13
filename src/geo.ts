@@ -7,6 +7,8 @@ export interface Point { lat: number; lon: number }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let lastNominatim = 0;
+// Nominatim answered 403/429 in this run: blocked or throttled, so no more geocoding until the next run.
+let nominatimBlocked = false;
 let lastOsrm = 0;
 let googleCalls = 0;
 // Per run (GOOGLE_MAX_CALLS, default 50): ~6 runs a day stay near the 150/day quota set in Google Cloud, which keeps
@@ -27,7 +29,7 @@ async function api<T>(url: string, init: RequestInit = {}, attempts = 3): Promis
     } catch (e) {
       err = e;
       if ((e as { fatal?: boolean }).fatal) break;
-      await sleep(1500 * 2 ** i);
+      if (i < attempts - 1) await sleep(1500 * 2 ** i);
     }
   }
   throw err;
@@ -38,17 +40,22 @@ export async function geocode(store: Store, query: string): Promise<Point | null
   const key = `geo:${query.toLowerCase()}`;
   const cached = store.kvGet<Point | null>(key);
   if (cached !== undefined) return cached;
+  if (nominatimBlocked) return null;
   const wait = lastNominatim + 1100 - Date.now();
   if (wait > 0) await sleep(wait);
   lastNominatim = Date.now();
   const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=pt&q=${encodeURIComponent(query)}`;
   try {
-    const r = await api<{ lat: string; lon: string }[]>(url);
+    const r = await api<{ lat: string; lon: string }[]>(url, {}, 1);
     const p = r[0] ? { lat: Number(r[0].lat), lon: Number(r[0].lon) } : null;
     store.kvSet(key, p);
     return p;
   } catch (e) {
-    log.warn(`geocode failed for "${query}": ${(e as Error).message}`);
+    const msg = (e as Error).message;
+    if (/^HTTP (403|429)\b/.test(msg)) {
+      nominatimBlocked = true;
+      log.warn(`nominatim: blocked (${msg.slice(0, 8)}), no more geocoding in this run`);
+    } else log.warn(`geocode failed for "${query}": ${msg}`);
     return null;
   }
 }

@@ -4,7 +4,7 @@ import type { Reaction, Store } from './db.ts';
 import type { Listing } from './types.ts';
 import { log } from './log.ts';
 import { allCriteria, classify } from './filter.ts';
-import { routeUrl } from './extras.ts';
+import { comparablePool, routeUrl } from './extras.ts';
 import { knownPoint } from './geo.ts';
 import { ineLine, ineMedian, type InePrices } from './ine.ts';
 import { cachedNearby, nearbyLine } from './nearby.ts';
@@ -38,8 +38,9 @@ export const workerEnabled = () => Boolean(process.env.WORKER_URL && config.tele
 
 /** Copies 👍/👎 presses recorded by the worker into the local database. */
 export async function pullReactions(store: Store): Promise<number> {
-  const rs = await call<{ kind: Reaction; chat: string; gid: string }[]>('/reactions');
-  for (const r of rs) store.setReaction(r.gid, r.kind, r.chat);
+  const rs = await call<{ kind: Reaction | null; chat: string; gid: string }[]>('/reactions');
+  // kind null: taken back in the app; drop it here too, or the next push would bring it back.
+  for (const r of rs) if (r.kind) store.setReaction(r.gid, r.kind, r.chat); else store.removeReaction(r.gid, r.chat);
   log.info(`worker: ${rs.length} reaction(s)`);
   return rs.length;
 }
@@ -56,7 +57,7 @@ export function buildCatalogue(store: Store, now = Date.now(), planes: Sample[] 
     const cur = leaders.get(l.group_id);
     if (!cur || cur.last_seen <= l.last_seen) leaders.set(l.group_id, l);
   }
-  const pool = all.filter((l) => now - Date.parse(l.last_seen) < 60 * 86400_000);
+  const pool = comparablePool(all.filter((l) => now - Date.parse(l.last_seen) < 60 * 86400_000));
   const ine = store.kvGet<InePrices>('ine:prices');
   const school = config.school.lat !== null && config.school.lon !== null ? { lat: config.school.lat, lon: config.school.lon } : null;
   const catalogue: Catalogue = {};
