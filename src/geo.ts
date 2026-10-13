@@ -119,6 +119,16 @@ export async function driveMinutes(store: Store, from: Point, to: Point): Promis
   return min;
 }
 
+/** The same location as listingPoint, from coordinates or the geocoding cache only (no network): for the map. */
+export function knownPoint(store: Store, l: Listing): { p: Point; approx: boolean } | null {
+  if (l.lat !== null && l.lon !== null) return { p: { lat: l.lat, lon: l.lon }, approx: !l.address };
+  const cached = (q: string) => store.kvGet<Point | null>(`geo:${q.toLowerCase()}`) ?? null;
+  const exact = l.address ? cached([l.address, l.municipality, 'Portugal'].filter(Boolean).join(', ')) : null;
+  if (exact) return { p: exact, approx: false };
+  const area = cached([l.neighborhood, l.municipality, 'Portugal'].filter(Boolean).join(', '));
+  return area ? { p: area, approx: true } : null;
+}
+
 /** Listing location: exact coords if the source gives them, else geocoded parish/municipality (approximate). */
 export async function listingPoint(store: Store, l: Listing): Promise<{ p: Point | null; approx: boolean }> {
   if (l.lat !== null && l.lon !== null) return { p: { lat: l.lat, lon: l.lon }, approx: !l.address };

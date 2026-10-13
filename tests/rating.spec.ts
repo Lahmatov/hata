@@ -5,7 +5,7 @@ import { classify } from '../src/filter.ts';
 import { score } from '../src/score.ts';
 import { tableRow } from '../src/table.ts';
 import { buildCatalogue } from '../src/worker-sync.ts';
-import { type Catalogue, favDeck, favouritesTable, type KV } from '../worker/index.ts';
+import { type Catalogue, favDeck, favouritesTable, type KV, listNotes, saveNote } from '../worker/index.ts';
 import { TABLE_COLS } from '../worker/table.ts';
 import { colName, xlsx } from '../worker/xlsx.ts';
 import { mk } from './helpers.ts';
@@ -134,5 +134,20 @@ test.describe('rating and favourites table', () => {
     expect(cards[0][gid].e).toEqual(['балкон']);
     expect(cards[0][gid].y).toContain('дорога');
     expect(rows[0][gid]).toHaveLength(TABLE_COLS.length);
+  });
+
+  test('shared notes: validated, one key per flat, and filled into the table', async () => {
+    const s = new Date().toISOString();
+    const kv = memKV({ catalogue: { g1: { t: 'Benfica', u: 'https://x/1', p: 1, a: 1, c: 1, s, m: [], q: 50 } } }, [['like', '1', 'g1']]);
+    const n = await saveNote(kv, 'g1', { s: 'viewing', d: '2026-10-16T18:00', t: '  Агент Ана  '.padEnd(400, '!') }, '1');
+    expect(n.s).toBe('viewing');
+    expect(n.t).toHaveLength(300);
+    expect((await saveNote(kv, 'g2', { s: 'hack', d: 'tomorrow' }, '2'))).toEqual({ by: '2', at: expect.any(String) });
+    expect(Object.keys(await listNotes(kv)).sort()).toEqual(['g1', 'g2']);
+    const { cols, rows } = await favouritesTable(kv, { 1: 'Женя' });
+    const col = (h: string) => rows[0][cols.findIndex((c) => c.h === h)];
+    expect(col('Статус')).toBe('📅 просмотр');
+    expect(col('Просмотр (дата)')).toBe('2026-10-16 18:00');
+    expect(String(col('Заметки'))).toMatch(/^Агент Ана/);
   });
 });

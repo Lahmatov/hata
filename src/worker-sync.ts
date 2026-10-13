@@ -5,6 +5,7 @@ import type { Listing } from './types.ts';
 import { log } from './log.ts';
 import { classify } from './filter.ts';
 import { routeUrl } from './extras.ts';
+import { knownPoint } from './geo.ts';
 import { factsLine, ruleBasedProsCons } from './summarize.ts';
 import { score } from './score.ts';
 import { tableRow } from './table.ts';
@@ -64,6 +65,11 @@ export function buildCatalogue(store: Store, now = Date.now()): { catalogue: Cat
       t: [l.neighborhood, l.municipality].filter(Boolean).join(', ') || l.title, u: l.url, p: l.price, a: l.area_m2,
       c: l.commute_min, s: l.last_seen, m: store.messages(l.group_id).map((x) => [x.chatId, x.messageId]), k: c.verdict, n, q: s.total,
     };
+    const pt = knownPoint(store, l);
+    if (pt) {
+      catalogue[gid].g = [Math.round(pt.p.lat * 1e5) / 1e5, Math.round(pt.p.lon * 1e5) / 1e5];
+      if (pt.approx) catalogue[gid].ga = 1;
+    }
     (cards[n] ??= {})[gid] = {
       h: l.title, b: l.bedrooms, i: (l.images ?? (l.image ? [l.image] : [])).slice(0, 60),
       f: factsLine(l), x: ruleBasedProsCons(l), w: c.verdict === 'manual' ? c.reasons : [], r: routeUrl(l, school),

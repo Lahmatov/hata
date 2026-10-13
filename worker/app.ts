@@ -77,6 +77,28 @@ export const APP_HTML = /* html */ `<!doctype html>
   nav button:disabled { opacity: .35; }
   .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--hint); padding: 24px; }
   .empty div { font-size: 52px; margin-bottom: 8px; }
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; z-index: 10; }
+  .sheet .box { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88%; overflow: auto; background: var(--bg);
+    border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
+  .sheet h3 { margin: 0 0 10px; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .sheet h3 button { border: 0; background: var(--card); color: var(--text); border-radius: 50%; width: 30px; height: 30px; font-size: 16px; }
+  .sheet label { display: block; font-size: 12px; color: var(--hint); margin: 10px 0 4px; }
+  .sheet select, .sheet input, .sheet textarea { width: 100%; font: inherit; padding: 9px; border-radius: 10px; border: 1px solid var(--card);
+    background: var(--card); color: var(--text); }
+  .sheet textarea { min-height: 80px; resize: vertical; }
+  .btn { display: inline-block; border: 0; border-radius: 10px; padding: 10px 14px; font: inherit; font-weight: 600; background: var(--link); color: #fff; cursor: pointer; }
+  .btn.ghost { background: var(--card); color: var(--link); }
+  .row2 { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .st { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 9px; background: rgba(245,179,1,.2); color: #a37500; margin-right: 4px; }
+  .notel { font-size: 12px; } .notel a { color: var(--link); font-weight: 600; text-decoration: none; }
+  .tools { display: flex; gap: 6px; margin: 10px 0 4px; } .tools .btn { flex: 1; padding: 10px 6px; font-size: 13px; }
+  #rank .row { grid-template-columns: 22px 30px 1fr auto; } #rank .row input { grid-row: span 2; align-self: center; width: 18px; height: 18px; }
+  .cmp { overflow-x: auto; } .cmp table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+  .cmp th, .cmp td { border-bottom: 1px solid var(--card); padding: 6px; vertical-align: top; text-align: left; min-width: 110px; }
+  .cmp th:first-child { position: sticky; left: 0; background: var(--bg); min-width: 80px; color: var(--hint); font-weight: 500; }
+  .cmp img { width: 120px; height: 80px; object-fit: cover; border-radius: 8px; display: block; }
+  .cmp .best { color: #1e9e57; font-weight: 700; }
+  #map { height: 68vh; border-radius: 12px; }
   #toast { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff;
     padding: 8px 14px; border-radius: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 </style>
@@ -96,6 +118,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     <button class="big yes" id="yes" aria-label="Нравится">♥</button>
   </nav>
 </div>
+<div class="sheet" id="sheet"><div class="box" id="sheetbox"></div></div>
 <div id="toast"></div>
 <script>
 (() => {
@@ -120,6 +143,138 @@ export const APP_HTML = /* html */ `<!doctype html>
     if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, '_blank');
   }
   const money = (n) => n == null ? 'цена ?' : n.toLocaleString('ru-RU').replace(/,/g, ' ') + ' €';
+  const STATUSES = { call: '📞 позвонить', called: '☎️ позвонили', viewing: '📅 просмотр', seen: '👀 посмотрели', offer: '🤝 предложение', no: '✖️ отказ' };
+  const SCHOOL = [38.735766, -9.226091];
+
+  // ---- bottom sheet (status/note, comparison, map) ----
+  function sheet(title) {
+    const box = $('sheetbox');
+    box.textContent = '';
+    const h = el('h3', '', title);
+    const x = el('button', '', '✕'); x.onclick = closeSheet; h.appendChild(x);
+    box.appendChild(h);
+    $('sheet').style.display = 'block';
+    return box;
+  }
+  function closeSheet() { $('sheet').style.display = 'none'; $('sheetbox').textContent = ''; }
+  $('sheet').onclick = (e) => { if (e.target.id === 'sheet') closeSheet(); };
+
+  function calendarUrl(c, d) {
+    const start = d.replace(/[-:]/g, '') + '00';
+    const t = new Date(d + ':00Z'); t.setUTCHours(t.getUTCHours() + 1);
+    const end = t.toISOString().slice(0, 16).replace(/[-:]/g, '') + '00';
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE&ctz=Europe/Lisbon&text=' + encodeURIComponent('Просмотр квартиры: ' + (c.t || ''))
+      + '&dates=' + start + '/' + end + '&details=' + encodeURIComponent(c.u + (c.nt && c.nt.t ? ' — ' + c.nt.t : '')) + '&location=' + encodeURIComponent(c.t || '');
+  }
+
+  // Shared status + note + viewing time for a flat (both of you see the same).
+  function noteSheet(c, after) {
+    const box = sheet('📝 ' + (c.t || 'Квартира'));
+    const n = c.nt || {};
+    box.appendChild(el('label', '', 'Статус'));
+    const s = el('select');
+    s.appendChild(new Option('—', ''));
+    Object.keys(STATUSES).forEach((k) => s.appendChild(new Option(STATUSES[k], k, false, n.s === k)));
+    box.appendChild(s);
+    box.appendChild(el('label', '', 'Просмотр (дата и время)'));
+    const d = el('input'); d.type = 'datetime-local'; d.value = n.d || ''; box.appendChild(d);
+    box.appendChild(el('label', '', 'Заметка (видна обоим, до 300 символов)'));
+    const t = el('textarea'); t.maxLength = 300; t.value = n.t || ''; box.appendChild(t);
+    if (n.at) box.appendChild(el('label', '', 'Изменено ' + n.at.slice(0, 16).replace('T', ' ') + (names[n.by] ? ' · ' + names[n.by] : '')));
+    const row = el('div', 'row2');
+    const save = el('button', 'btn', 'Сохранить');
+    save.onclick = async () => {
+      if (d.value && !s.value) s.value = 'viewing';
+      try {
+        const r = await api('/api/note', { id: c.id, note: { s: s.value, d: d.value, t: t.value } });
+        c.nt = r.note; toast('Сохранено, видно обоим'); closeSheet(); if (after) after();
+      } catch (e) { toast('Не сохранилось, проверьте интернет'); }
+    };
+    row.appendChild(save);
+    const cal = el('button', 'btn ghost', '📅 В календарь');
+    cal.onclick = () => { if (!d.value) return toast('Сначала выберите дату просмотра'); open(calendarUrl(Object.assign({}, c, { nt: { t: t.value } }), d.value)); };
+    row.appendChild(cal);
+    box.appendChild(row);
+  }
+
+  function noteLine(c) {
+    const n = c.nt || {};
+    const box = el('div', 'notel');
+    if (n.s) box.appendChild(el('span', 'st', STATUSES[n.s] + (n.d ? ' ' + n.d.slice(5, 16).replace('T', ' ') : '')));
+    if (n.t) box.appendChild(document.createTextNode(n.t.length > 80 ? n.t.slice(0, 80) + '…' : n.t));
+    return box;
+  }
+
+  // ⚖️ Side by side: best value per row in green.
+  async function compareSheet(ids) {
+    const box = sheet('⚖️ Сравнение');
+    box.appendChild(el('p', 'why', 'Загружаю…'));
+    let d;
+    try { d = await api('/api/cards', { ids }); } catch (e) { box.lastChild.textContent = 'Не удалось загрузить'; return; }
+    box.removeChild(box.lastChild);
+    const cs = d.cards;
+    const ppm = (c) => c.p && c.a ? Math.round(c.p / c.a) : null;
+    const rows = [
+      ['', (c) => { const w = el('div'); if (c.i && c.i[0]) { const im = el('img'); im.src = c.i[0]; w.appendChild(im); } w.appendChild(el('div', '', c.t || '')); return w; }],
+      ['Баллы', (c) => c.q, 'max'], ['Цена', (c) => c.p, 'min', money], ['Площадь, м²', (c) => c.a && Math.round(c.a), 'max'],
+      ['€/м²', ppm, 'min', money], ['Спальни', (c) => c.b, 'max'], ['До школы, мин', (c) => c.c != null ? Math.round(c.c) : null, 'min'],
+      ['Удобства', (c) => (c.e || []).join(', ') || '—'], ['Факты', (c) => c.f || ''], ['Плюс / минус', (c) => c.x || ''],
+      ['Кто лайкнул', (c) => whoLine(c) || '—'], ['Статус', (c) => c.nt && c.nt.s ? STATUSES[c.nt.s] : '—'], ['Заметка', (c) => (c.nt && c.nt.t) || '—'],
+      ['', (c) => { const a = el('a', '', 'Открыть объявление'); a.href = '#'; a.onclick = (e) => { e.preventDefault(); open(c.u); }; return a; }],
+    ];
+    const table = el('table');
+    for (const [label, get, best, fmt] of rows) {
+      const tr = el('tr');
+      tr.appendChild(el('th', '', label));
+      const vals = cs.map(get);
+      const nums = vals.filter((v) => typeof v === 'number');
+      const target = best === 'max' ? Math.max(...nums) : best === 'min' ? Math.min(...nums) : null;
+      vals.forEach((v) => {
+        const td = el('td');
+        if (v instanceof Node) td.appendChild(v);
+        else td.textContent = v == null ? '?' : fmt ? fmt(v) : String(v);
+        if (best && nums.length > 1 && v === target) td.className = 'best';
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    }
+    const wrap = el('div', 'cmp'); wrap.appendChild(table); box.appendChild(wrap);
+  }
+
+  // 🗺 Map of favourites (OpenStreetMap tiles, Leaflet loaded on first use).
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve();
+    return new Promise((ok, fail) => {
+      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+      document.head.appendChild(css);
+      const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+      s.onload = ok; s.onerror = fail; document.head.appendChild(s);
+    });
+  }
+  async function mapSheet(list) {
+    const box = sheet('🗺 Избранное на карте');
+    const m = el('div'); m.id = 'map'; box.appendChild(m);
+    box.appendChild(el('p', 'why', '🔵 суперлайк · 🔴 нравится обоим · 🟢 нравится одному · серый: отказ · пунктир: адрес известен только до района · 🏫 школа'));
+    try { await loadLeaflet(); } catch (e) { m.textContent = 'Карта не загрузилась, проверьте интернет'; return; }
+    const map = L.map(m).setView(SCHOOL, 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    L.marker(SCHOOL, { icon: L.divIcon({ html: '🏫', className: '', iconSize: [24, 24] }) }).addTo(map).bindPopup('PaRK International School');
+    const pts = [SCHOOL];
+    list.filter((c) => c.g).forEach((c) => {
+      const color = c.nt && c.nt.s === 'no' ? '#8e8e93' : c.me === 'super' || c.ot === 'super' ? '#2f9bff' : c.me && c.ot ? '#e0245e' : '#2ecc71';
+      const mk = L.circleMarker(c.g, { radius: 9, color, weight: 3, fillOpacity: c.ga ? 0.15 : 0.6, dashArray: c.ga ? '4 4' : null }).addTo(map);
+      const pop = el('div');
+      pop.appendChild(el('b', '', money(c.p) + (c.q != null ? ' · 🏆 ' + c.q : '')));
+      pop.appendChild(el('div', '', (c.t || '') + (c.c != null ? ' · 🚗 ' + Math.round(c.c) + ' мин' : '')));
+      pop.appendChild(el('div', '', whoLine(c)));
+      const go = el('a', '', 'Открыть карточку'); go.href = '#'; go.onclick = (e) => { e.preventDefault(); closeSheet(); first = c.id; setMode('fav'); };
+      pop.appendChild(go);
+      mk.bindPopup(pop);
+      pts.push(c.g);
+    });
+    map.fitBounds(pts, { padding: [24, 24] });
+    setTimeout(() => map.invalidateSize(), 200);
+  }
 
   async function api(path, body) {
     const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ initData }, body)) });
@@ -163,19 +318,34 @@ export const APP_HTML = /* html */ `<!doctype html>
       box.textContent = '';
       $('left').textContent = '';
       if (!d.cards.length) { box.innerHTML = '<p style="text-align:center;color:var(--hint)">В избранном пока пусто.<br>Свайпайте вправо во вкладке «Новые».</p>'; return; }
-      const ex = el('button', 'export', '📊 Таблица Excel в чат с ботом');
-      ex.onclick = exportTable;
-      box.appendChild(ex);
+      const picked = new Set();
+      const tools = el('div', 'tools');
+      const ex = el('button', 'btn', '📊 Таблица'); ex.onclick = exportTable;
+      const mp = el('button', 'btn ghost', '🗺 Карта'); mp.onclick = () => mapSheet(d.cards);
+      const cmp = el('button', 'btn ghost', '⚖️ Сравнить');
+      cmp.onclick = () => picked.size >= 2 ? compareSheet([...picked]) : toast('Отметьте 2–4 квартиры галочками');
+      tools.append(ex, mp, cmp);
+      box.appendChild(tools);
       d.cards.forEach((c, i) => {
         const r = el('div', 'row');
+        const cb = el('input'); cb.type = 'checkbox';
+        cb.onclick = (e) => {
+          e.stopPropagation();
+          if (cb.checked && picked.size >= 4) { cb.checked = false; return toast('Сравнить можно до 4 квартир'); }
+          cb.checked ? picked.add(c.id) : picked.delete(c.id);
+          cmp.textContent = '⚖️ Сравнить' + (picked.size ? ' (' + picked.size + ')' : '');
+        };
+        r.appendChild(cb);
         r.appendChild(el('div', 'n', String(i + 1)));
         r.appendChild(el('div', 'l1', [money(c.p), c.a != null ? Math.round(c.a) + ' м²' : null, c.c != null ? '🚗 ' + Math.round(c.c) + ' мин' : null].filter(Boolean).join(' · ')));
         r.appendChild(el('div', 'q', c.q != null ? String(c.q) : '–'));
-        r.appendChild(el('div', 'l2', (c.t || '') + ' · ' + whoLine(c)));
+        const l2 = el('div', 'l2', (c.t || '') + ' · ' + whoLine(c));
+        if (c.nt) l2.appendChild(noteLine(c));
+        r.appendChild(l2);
         r.onclick = () => { first = c.id; setMode('fav'); };
         box.appendChild(r);
       });
-      box.appendChild(el('p', 'why', 'Баллы из 100: цена 25, дорога до школы 25, площадь 15, цена за м² против района 15, состояние 10, удобства 10. Нажмите на строку, чтобы открыть карточку.'));
+      box.appendChild(el('p', 'why', 'Баллы из 100: цена 25, дорога до школы 25, площадь 15, цена за м² против района 15, состояние 10, удобства 10. Нажмите на строку, чтобы открыть карточку; галочки — для сравнения.'));
     } catch (e) {
       box.innerHTML = '<p style="text-align:center;color:var(--hint)">Не удалось загрузить. Нажмите ⋯ → «Обновить страницу».</p>';
     }
@@ -233,7 +403,14 @@ export const APP_HTML = /* html */ `<!doctype html>
     const info = el('div', 'info');
     const chip = c.k === 'manual' ? ['manual', '❓ проверить: ' + (c.w || []).join(', ')]
       : c.k === 'negotiate' ? ['negotiate', '💬 выше бюджета, нужен торг'] : ['match', '✅ подходит по всем критериям'];
-    if (mode === 'fav') info.appendChild(el('div', 'who', whoLine(c)));
+    if (mode === 'fav') {
+      info.appendChild(el('div', 'who', whoLine(c)));
+      const nl = noteLine(c);
+      const a = el('a', '', c.nt ? ' ✏️ изменить' : '📝 Статус, заметка, просмотр'); a.href = '#';
+      a.onclick = (e) => { e.preventDefault(); noteSheet(c, render); };
+      nl.appendChild(a);
+      info.appendChild(nl);
+    }
     info.appendChild(el('span', 'chip ' + chip[0], chip[1]));
     if (c.e && c.e.length) { const fs = el('div', 'feats'); c.e.forEach((t) => fs.appendChild(el('i', '', t))); info.appendChild(fs); }
     if (c.x && /[^➕➖—\s]/u.test(c.x)) info.appendChild(el('div', '', c.x));
@@ -277,7 +454,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     let x0 = 0, y0 = 0, dx = 0, dy = 0, down = false, moved = false;
     const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no'), sup = card.querySelector('.stamp.super');
     card.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('a')) return;
+      if (e.target.closest('a,button,input,select,textarea')) return;
       down = true; moved = false; x0 = e.clientX; y0 = e.clientY; dx = dy = 0;
       card.setPointerCapture(e.pointerId); card.style.transition = 'none';
     });
