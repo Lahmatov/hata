@@ -43,6 +43,8 @@ async function collect(store: Store, now: string) {
     // Search pages carry ~3 photos, the listing page all of them: listings read before photos were stored
     // are re-read, a limited number per run (--photo-backfill=N for a one-off catch-up run).
     let photoBackfill = Number(opt('photo-backfill') ?? process.env.PHOTO_BACKFILL ?? 150);
+    // --max-detail=N caps listing pages read per source (a quick dry run checks the code, not the sites).
+    const maxDetail = Number(opt('max-detail') ?? Infinity);
     try {
       if (adapter.fetchAll) {
         const got = await adapter.fetchAll({ kvGet: (k) => store.kvGet(k), kvSet: (k, v) => store.kvSet(k, v) });
@@ -67,7 +69,8 @@ async function collect(store: Store, now: string) {
         for (let raw of parsed) {
           if (!worthEnriching(raw)) continue;
           const id = `${raw.source}:${raw.sourceId}`;
-          const needsDetail = adapter.enrich && (!store.detailDone(id, raw.price) || (!store.photosDone(id) && photoBackfill-- > 0));
+          const needsDetail = adapter.enrich && details < maxDetail
+            && (!store.detailDone(id, raw.price) || (!store.photosDone(id) && photoBackfill-- > 0));
           let detailed = false;
           if (needsDetail) {
             try {
