@@ -202,6 +202,13 @@ async function main() {
 
   // Sale prices (INE, weekly), what is near each favourite (OpenStreetMap) and APA flood maps, cached, for cards and the table.
   await refreshIne(store);
+  // Favourites without a location yet (e.g. known only from e-mails, commute still queued): geocode them for the
+  // map (Nominatim, 1 request/s, cached), at most 40 per run.
+  let geocoded = 0;
+  for (const l of store.all().filter((x) => favourites.has(x.group_id) && !knownPoint(store, x))) {
+    if (geocoded++ >= 40) break;
+    await listingPoint(store, l);
+  }
   const favPoints = store.all().filter((l) => favourites.has(l.group_id)).map((l) => knownPoint(store, l))
     .filter((x): x is NonNullable<typeof x> => x !== null && !x.approx).map((x) => x.p);
   await fillNearby(store, favPoints);
