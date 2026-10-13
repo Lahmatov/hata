@@ -75,6 +75,8 @@ export const APP_HTML = /* html */ `<!doctype html>
   nav .small { width: 46px; height: 46px; font-size: 20px; }
   nav .no { color: var(--no); } nav .yes { color: var(--yes); } nav .undo { color: var(--undo); } nav .super { color: var(--super); }
   nav button:disabled { opacity: .35; }
+  nav .arrow { color: var(--hint); width: 40px; height: 40px; font-size: 16px; }
+  nav.fav { gap: 10px; } nav button[hidden] { display: none; }
   .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--hint); padding: 24px; }
   .empty div { font-size: 52px; margin-bottom: 8px; }
   .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; z-index: 10; }
@@ -99,6 +101,9 @@ export const APP_HTML = /* html */ `<!doctype html>
   .cmp img { width: 120px; height: 80px; object-fit: cover; border-radius: 8px; display: block; }
   .cmp .best { color: #1e9e57; font-weight: 700; }
   #map { height: 68vh; border-radius: 12px; }
+  .pin { padding: 2px 6px; border-radius: 10px; color: #fff; font: 700 11px/1.3 -apple-system, sans-serif; white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,.4); border: 2px solid #fff; transform: translate(-50%, -50%); display: inline-block; }
+  .pin.approx { border-style: dashed; opacity: .85; }
   #toast { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff;
     padding: 8px 14px; border-radius: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 </style>
@@ -112,10 +117,12 @@ export const APP_HTML = /* html */ `<!doctype html>
   <div id="stack"></div>
   <div id="rankwrap" style="position:relative;flex:1;min-height:0;display:none"><div id="rank"></div></div>
   <nav>
+    <button class="small arrow" id="prev" aria-label="Предыдущая" hidden>◀</button>
     <button class="small undo" id="undo" aria-label="Вернуть" disabled>↩</button>
     <button class="big no" id="no" aria-label="Не нравится">✖</button>
     <button class="small super" id="super" aria-label="Суперлайк">★</button>
     <button class="big yes" id="yes" aria-label="Нравится">♥</button>
+    <button class="small arrow" id="next" aria-label="Следующая" hidden>▶</button>
   </nav>
 </div>
 <div class="sheet" id="sheet"><div class="box" id="sheetbox"></div></div>
@@ -131,6 +138,8 @@ export const APP_HTML = /* html */ `<!doctype html>
   const me = String((tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) || '');
   const history = [];           // [{ card, kind }] for undo
   const sent = new Set();       // ids judged in this session (kept out of the next deck page)
+  const viewed = [];            // favourites: cards passed (▶ or a swipe that keeps them), for ◀
+  let favTotal = null;          // favourites in the list: set on the first page, minus 👎 in this session
 
   const haptic = (t) => { try { tg.HapticFeedback.impactOccurred(t); } catch (e) {} };
   function toast(text) { const t = $('toast'); t.textContent = text; t.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.opacity = 0, 1800); }
@@ -255,24 +264,32 @@ export const APP_HTML = /* html */ `<!doctype html>
   async function mapSheet(list) {
     const box = sheet('🗺 Избранное на карте');
     const m = el('div'); m.id = 'map'; box.appendChild(m);
-    box.appendChild(el('p', 'why', '🔵 суперлайк · 🔴 нравится обоим · 🟢 нравится одному · серый: отказ · пунктир: адрес известен только до района · 🏫 школа'));
+    box.appendChild(el('p', 'why', 'Нажмите на точку, чтобы открыть квартиру. Цена в тыс. €. 🔵 суперлайк · 🔴 нравится обоим · 🟢 одному · серый: отказ · пунктир: адрес известен только до района · 🏫 школа'));
     try { await loadLeaflet(); } catch (e) { m.textContent = 'Карта не загрузилась, проверьте интернет'; return; }
     const map = L.map(m).setView(SCHOOL, 12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
     L.marker(SCHOOL, { icon: L.divIcon({ html: '🏫', className: '', iconSize: [24, 24] }) }).addTo(map).bindPopup('PaRK International School');
     const pts = [SCHOOL];
-    list.filter((c) => c.g).forEach((c) => {
+    const placed = list.filter((c) => c.g);
+    // Flats known only to the neighbourhood share its centre: spread them on a small circle so each can be tapped.
+    const same = {};
+    placed.forEach((c) => { const k = c.g.join(','); (same[k] = same[k] || []).push(c); });
+    const at = (c) => {
+      const group = same[c.g.join(',')];
+      if (group.length < 2) return c.g;
+      const i = group.indexOf(c), r = 0.0012 * (1 + Math.floor(i / 8)), a = (i % 8) / 8 * 2 * Math.PI;
+      return [c.g[0] + r * Math.sin(a), c.g[1] + r * 1.3 * Math.cos(a)];
+    };
+    placed.forEach((c) => {
       const color = c.nt && c.nt.s === 'no' ? '#8e8e93' : c.me === 'super' || c.ot === 'super' ? '#2f9bff' : c.me && c.ot ? '#e0245e' : '#2ecc71';
-      const mk = L.circleMarker(c.g, { radius: 9, color, weight: 3, fillOpacity: c.ga ? 0.15 : 0.6, dashArray: c.ga ? '4 4' : null }).addTo(map);
-      const pop = el('div');
-      pop.appendChild(el('b', '', money(c.p) + (c.q != null ? ' · 🏆 ' + c.q : '')));
-      pop.appendChild(el('div', '', (c.t || '') + (c.c != null ? ' · 🚗 ' + Math.round(c.c) + ' мин' : '')));
-      pop.appendChild(el('div', '', whoLine(c)));
-      const go = el('a', '', 'Открыть карточку'); go.href = '#'; go.onclick = (e) => { e.preventDefault(); closeSheet(); first = c.id; setMode('fav'); };
-      pop.appendChild(go);
-      mk.bindPopup(pop);
-      pts.push(c.g);
+      const label = c.p ? Math.round(c.p / 1000) + 'k' : '?';
+      const icon = L.divIcon({ className: '', html: '<span class="pin' + (c.ga ? ' approx' : '') + '" style="background:' + color + '">' + label + '</span>', iconSize: null });
+      // Tap a point: straight into that flat's card.
+      L.marker(at(c), { icon, title: (c.t || '') + ' · ' + money(c.p) }).addTo(map).on('click', () => { closeSheet(); first = c.id; setMode('fav'); });
+      pts.push(at(c));
     });
+    const missing = list.length - placed.length;
+    if (missing) box.appendChild(el('p', 'why', missing + ' кв. без адреса и района не на карте (появятся после следующего запуска, если район известен).'));
     map.fitBounds(pts, { padding: [24, 24] });
     setTimeout(() => map.invalidateSize(), 200);
   }
@@ -294,6 +311,7 @@ export const APP_HTML = /* html */ `<!doctype html>
       first = null;
       if (d.names) names = d.names;
       total = d.total + cards.length; judged = 0;
+      if (m === 'fav' && favTotal === null) favTotal = d.total;
       for (const c of d.cards) if (!cards.some((x) => x.id === c.id)) cards.push(c);
       failed = '';
     } catch (e) {
@@ -366,7 +384,9 @@ export const APP_HTML = /* html */ `<!doctype html>
     $('rankwrap').style.display = rank ? 'block' : 'none';
     $('rank').style.display = rank ? 'block' : 'none';
     document.querySelector('nav').style.display = rank ? 'none' : '';
-    cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = '';
+    document.querySelector('nav').classList.toggle('fav', m === 'fav');
+    $('prev').hidden = $('next').hidden = m !== 'fav';
+    cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = ''; viewed.length = 0; favTotal = null;
     if (rank) { loadRank(); return; }
     render();
     load();
@@ -434,7 +454,10 @@ export const APP_HTML = /* html */ `<!doctype html>
     stack.textContent = '';
     $('undo').disabled = !history.length;
     const left = Math.max(0, total - judged);
-    $('left').textContent = cards.length ? 'осталось ' + left : '';
+    $('left').textContent = mode === 'fav' ? (favTotal ? Math.min(viewed.length + 1, favTotal) + ' из ' + favTotal : '')
+      : cards.length ? 'осталось ' + left : '';
+    $('prev').disabled = !viewed.length;
+    $('next').disabled = !cards.length;
     if (!cards.length) {
       const e = el('div', 'empty');
       e.innerHTML = failed ? '<p></p>' : mode === 'fav' ? '<p><div>⭐</div>Избранное пройдено.<br>Итог во вкладке «🏆 Рейтинг», там же таблица Excel.</p>'
@@ -500,6 +523,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     // Favourites: swiping right on your own like just moves on (no write); undo restores the previous reaction.
     const write = !(mode === 'fav' && (c.me === kind || (kind === 'like' && c.me === 'super')));
     cards.shift(); judged++; sent.add(c.id); history.push({ card: c, kind, write, prev: c.me });
+    if (mode === 'fav') { if (kind === 'hide') favTotal--; else viewed.push(c); }
     if (history.length > 20) history.shift();
     if (write) api('/api/react', { id: c.id, kind, mine: mode === 'fav' }).catch(() => toast('Не сохранилось, проверьте интернет'));
     if (mode === 'fav') toast(kind === 'hide' ? '👎 Убрал из вашего избранного' : kind === 'super' ? '🌟 Точно смотреть' : write ? '❤️ И вам нравится' : '❤️ Оставил');
@@ -513,6 +537,10 @@ export const APP_HTML = /* html */ `<!doctype html>
     const last = history.pop();
     if (!last) return;
     sent.delete(last.card.id); judged = Math.max(0, judged - 1);
+    if (mode === 'fav') {
+      if (last.kind === 'hide') favTotal++;
+      else if (viewed[viewed.length - 1] === last.card) viewed.pop();
+    }
     cards.unshift(last.card);
     if (last.write !== false) {
       (last.prev ? api('/api/react', { id: last.card.id, kind: last.prev }) : api('/api/undo', { id: last.card.id })).catch(() => toast('Не удалось вернуть'));
@@ -525,7 +553,20 @@ export const APP_HTML = /* html */ `<!doctype html>
   $('no').onclick = () => judge('hide');
   $('super').onclick = () => judge('super');
   $('undo').onclick = undo;
-  document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') judge('like'); if (e.key === 'ArrowLeft') judge('hide'); if (e.key === 'ArrowUp') judge('super'); });
+  // Favourites: ◀ ▶ only browse, nothing is saved.
+  function browse(d) {
+    if (d > 0 && cards.length) { const c = cards.shift(); viewed.push(c); sent.add(c.id); judged++; if (cards.length < 5) load(); }
+    else if (d < 0 && viewed.length) { const c = viewed.pop(); cards.unshift(c); judged = Math.max(0, judged - 1); }
+    else return;
+    haptic('light');
+    render();
+  }
+  $('prev').onclick = () => browse(-1);
+  $('next').onclick = () => browse(1);
+  document.addEventListener('keydown', (e) => {
+    if (mode === 'fav' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) return browse(e.key === 'ArrowRight' ? 1 : -1);
+    if (e.key === 'ArrowRight') judge('like'); if (e.key === 'ArrowLeft') judge('hide'); if (e.key === 'ArrowUp') judge('super');
+  });
   render();
   load();
 })();
