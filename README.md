@@ -185,7 +185,7 @@ Cloud стоит лимит 150 в день: бесплатно 5000 в меся
   включить **Maps Embed API** (бесплатный, без лимита) → Credentials → Create API key → Restrict key:
   Application restrictions: Websites, адрес бота из Actions → bot-worker (строка `url=`), например
   `https://hata-bot.<ваш-поддомен>.workers.dev/*`; API restrictions: только Maps Embed API. Затем добавить его в секреты репозитория как `MAPS_EMBED_KEY` и перезапустить Actions → bot-worker. Ключ
-  виден странице, поэтому не используйте ключ от Routes (`GOOGLE_MAPS_KEY`).
+  виден странице, поэтому не используйте ключ от Routes (`GOOGLE_MAPS_API_KEY`).
 - 💶 Расходы при покупке (`src/costs.ts`): IMT по таблицам 2026 года с IMT Jovem (покупателям до 35 лет:
   до 330 539 € IMT и гербовый сбор 0, выше только с превышения; `IMT_JOVEM=0` выключает), гербовый сбор на
   кредит 0,6%, Casa Pronta 700 €, платёж по ипотеке (`MORTGAGE_SHARE` 0.8, `MORTGAGE_RATE` 0.032,
