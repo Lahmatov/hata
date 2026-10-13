@@ -18,10 +18,16 @@ export function sameProperty(a: Listing, b: Listing): boolean {
   // Aggregators (Trovit) give only the municipality: identical price + area within 1% in the same municipality.
   if ((!addrA || !addrB) && norm(a.municipality) && norm(a.municipality) === norm(b.municipality)
     && a.price === b.price && within(a.area_m2, b.area_m2, 0.01)) return true;
-  // Without address/coords: same parish + near-identical numbers is a strong enough hint.
-  const nA = norm(a.neighborhood);
-  const nB = norm(b.neighborhood);
-  return !!nA && nA === nB && within(a.price, b.price, 0.005) && within(a.area_m2, b.area_m2, 0.01);
+  // Without address/coords (alert e-mails give only a place name, e.g. "Algueirao" for "Algueirão-Mem Martins"):
+  // the same parish, or one parish name inside the other, plus close numbers; a match on a wider name (the
+  // municipality) needs near-identical numbers.
+  const near = (x: string | null, y: string | null) => {
+    const [p, q] = [norm(x), norm(y)];
+    return p.length >= 4 && q.length >= 4 && (p === q || p.includes(q) || q.includes(p));
+  };
+  if (near(a.neighborhood, b.neighborhood)) return within(a.price, b.price, 0.01) && within(a.area_m2, b.area_m2, 0.02);
+  const wide = [a.neighborhood, a.municipality].some((x) => [b.neighborhood, b.municipality].some((y) => near(x, y)));
+  return wide && within(a.price, b.price, 0.005) && within(a.area_m2, b.area_m2, 0.01);
 }
 
 /** Union-find over all listings; group id = earliest first_seen member. */

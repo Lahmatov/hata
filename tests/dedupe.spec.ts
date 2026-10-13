@@ -36,3 +36,17 @@ test('same portal: exact re-post is grouped, similar flats are not', () => {
   expect(g.get('imovirtual:2')).toBe(g.get('imovirtual:1'));
   expect(g.get('imovirtual:3')).toBe('imovirtual:3');
 });
+
+test('alert e-mail flat (place name only) matches the portal flat it repeats', () => {
+  const portal = mk({ id: 'imovirtual:1', source: 'imovirtual', neighborhood: 'Algueirão-Mem Martins', municipality: 'Sintra',
+    lat: 38.7999, lon: -9.334, address: null, price: 380000, area_m2: 161.45 });
+  const mail = mk({ id: 'idealista:9', source: 'idealista', neighborhood: 'Algueirao', municipality: null, address: null,
+    lat: null, lon: null, price: 380000, area_m2: 161 });
+  expect(sameProperty(portal, mail)).toBe(true);
+  // A different flat in the same parish: other area.
+  expect(sameProperty(portal, { ...mail, area_m2: 175 })).toBe(false);
+  // Only the municipality in common: numbers must be near-identical.
+  const wide = mk({ id: 'idealista:8', source: 'idealista', neighborhood: 'Sintra', municipality: null, address: null, lat: null, lon: null, price: 380000, area_m2: 161.45 });
+  expect(sameProperty(portal, wide)).toBe(true);
+  expect(sameProperty(portal, { ...wide, price: 383000 })).toBe(false);
+});
