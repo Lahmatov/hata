@@ -88,6 +88,11 @@ export const APP_HTML = /* html */ `<!doctype html>
   .quick button.on { background: rgba(46,204,113,.18); border-color: #2ecc71; color: #1e9e57; font-weight: 600; } nav button[hidden] { display: none; }
   .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--hint); padding: 24px; }
   .empty div { font-size: 52px; margin-bottom: 8px; }
+  #walk { position: fixed; inset: 0; z-index: 30; background: #000; display: none; flex-direction: column; }
+  #walk .bar { display: flex; gap: 8px; align-items: center; padding: 8px; background: var(--bg); }
+  #walk .bar button { border: 0; border-radius: 10px; padding: 8px 12px; font: inherit; background: var(--card); color: var(--text); }
+  #walk .bar span { flex: 1; font-size: 12px; color: var(--hint); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #walk iframe { flex: 1; border: 0; width: 100%; }
   .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; z-index: 10; }
   .sheet .box { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88%; overflow: auto; background: var(--bg);
     border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
@@ -140,6 +145,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   </nav>
 </div>
 <div class="sheet" id="sheet"><div class="box" id="sheetbox"></div></div>
+<div id="walk"><div class="bar"><button id="walkback">← К карточке</button><span id="walktitle"></span><button id="walkext">Google Maps ↗</button></div><iframe id="walkframe" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
 <div id="toast"></div>
 <script>
 (() => {
@@ -160,6 +166,23 @@ export const APP_HTML = /* html */ `<!doctype html>
   try { bothOnly = localStorage.getItem('hata.both') === '1'; okOnly = localStorage.getItem('hata.ok') === '1'; } catch (e) {}
   // Walk around: Google Street View at the flat (Maps URL, no key); approximate when only the area is known.
   const streetUrl = (g) => 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + g[0] + ',' + g[1];
+  let embedKey = '';             // Maps Embed API key from the worker: Street View inside the app
+  // 🚶 Walk around a flat. Inside the app when there is a key (← or Telegram's back arrow returns to the card),
+  // else in Google Maps. From the map, the flat's card is opened first: coming back lands on it, not on the map.
+  function walk(c, fromMap) {
+    if (fromMap) { closeSheet(); first = c.id; setMode('fav'); }
+    if (!embedKey) { open(streetUrl(c.g)); return; }
+    $('walktitle').textContent = (c.ga ? 'Район: ' : '') + (c.t || '');
+    $('walkext').onclick = () => open(streetUrl(c.g));
+    $('walkframe').src = 'https://www.google.com/maps/embed/v1/streetview?key=' + encodeURIComponent(embedKey) + '&location=' + c.g[0] + ',' + c.g[1] + '&fov=90&language=ru';
+    $('walk').style.display = 'flex';
+    try { tg.BackButton.onClick(closeWalk); tg.BackButton.show(); } catch (e) {}
+  }
+  function closeWalk() {
+    $('walk').style.display = 'none';
+    $('walkframe').src = 'about:blank';
+    try { tg.BackButton.offClick(closeWalk); tg.BackButton.hide(); } catch (e) {}
+  }
 
   const haptic = (t) => { try { tg.HapticFeedback.impactOccurred(t); } catch (e) {} };
   // 💞 Both of you like it: a burst of hearts and sparks from the middle of the screen.
@@ -228,6 +251,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   }
   function closeSheet() { $('sheet').style.display = 'none'; $('sheetbox').textContent = ''; }
   $('sheet').onclick = (e) => { if (e.target.id === 'sheet') closeSheet(); };
+  $('walkback').onclick = closeWalk;
 
   function calendarUrl(c, d) {
     const start = d.replace(/[-:]/g, '') + '00';
@@ -366,8 +390,8 @@ export const APP_HTML = /* html */ `<!doctype html>
       pop.appendChild(el('div', '', (c.t || '') + (c.c != null ? ' · 🚗 ' + Math.round(c.c) + ' мин' : '')));
       const btns = el('div', 'popbtns');
       const go = el('a', '', 'Карточка'); go.href = '#'; go.onclick = (e) => { e.preventDefault(); closeSheet(); first = c.id; setMode('fav'); };
-      const walk = el('a', '', c.ga ? '🚶 Погулять (район)' : '🚶 Погулять'); walk.href = '#'; walk.onclick = (e) => { e.preventDefault(); open(streetUrl(c.g)); };
-      btns.append(go, walk);
+      const stroll = el('a', '', c.ga ? '🚶 Погулять (район)' : '🚶 Погулять'); stroll.href = '#'; stroll.onclick = (e) => { e.preventDefault(); walk(c, true); };
+      btns.append(go, stroll);
       pop.appendChild(btns);
       L.marker(at(c), { icon, title: (c.t || '') + ' · ' + money(c.p) }).addTo(map).bindPopup(pop);
       pts.push(at(c));
@@ -402,6 +426,7 @@ export const APP_HTML = /* html */ `<!doctype html>
       if (g !== deckGen) return;
       first = null;
       if (d.names) names = d.names;
+      if (d.ek) embedKey = d.ek;
       total = d.total + cards.length; judged = 0;
       if (m === 'fav' && favTotal === null) favTotal = d.total;
       for (const c of d.cards) if (!cards.some((x) => x.id === c.id)) cards.push(c);
@@ -429,6 +454,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     try {
       const d = await api('/api/deck', { mode: 'fav', slim: true, both: bothOnly, ok: okOnly });
       names = d.names || names;
+      if (d.ek) embedKey = d.ek;
       box.textContent = '';
       $('left').textContent = '';
       if (!d.cards.length) {
@@ -550,7 +576,7 @@ export const APP_HTML = /* html */ `<!doctype html>
       rb.onclick = () => toggleRealtor(c, rb);
       const lb = el('button', '', '🔗 Ссылка'); lb.onclick = () => shareLink(c);
       quick.append(rb, lb);
-      if (c.g) { const sv = el('button', '', c.ga ? '🚶 Улица (район)' : '🚶 Улица'); sv.onclick = () => open(streetUrl(c.g)); quick.append(sv); }
+      if (c.g) { const sv = el('button', '', c.ga ? '🚶 Улица (район)' : '🚶 Улица'); sv.onclick = () => walk(c); quick.append(sv); }
       info.appendChild(quick);
     }
     info.appendChild(el('span', 'chip ' + chip[0], chip[1]));

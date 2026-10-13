@@ -63,8 +63,12 @@ jobs:
         working-directory: worker
         env:
           URL: ${{ steps.sub.outputs.url }}
+          # Optional: Street View inside the swipe app (a browser key, so a plain var; see README).
+          MAPS_EMBED_KEY: ${{ secrets.MAPS_EMBED_KEY }}
         run: |
-          npx --yes wrangler@4 deploy --var "APP_URL:$URL"
+          extra=()
+          [ -n "$MAPS_EMBED_KEY" ] && extra=(--var "MAPS_EMBED_KEY:$MAPS_EMBED_KEY")
+          npx --yes wrangler@4 deploy --var "APP_URL:$URL" "${extra[@]}"
           printf '%s' "$TELEGRAM_BOT_TOKEN" | npx --yes wrangler@4 secret put TELEGRAM_BOT_TOKEN
           printf '%s' "$TELEGRAM_CHAT_ID" | npx --yes wrangler@4 secret put TELEGRAM_CHAT_ID
       - name: Connect the bot
