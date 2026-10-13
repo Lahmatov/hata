@@ -81,6 +81,7 @@ export const APP_HTML = /* html */ `<!doctype html>
   .filters button { border: 1px solid var(--card); background: var(--bg); color: var(--text); border-radius: 14px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
   .filters button.on { background: #e0245e; border-color: #e0245e; color: #fff; font-weight: 600; }
   .filters #okf.on { background: #1e9e57; border-color: #1e9e57; }
+  .okhint { display: none; font-size: 12px; color: var(--hint); padding: 0 4px; }
   .popbtns { display: flex; gap: 6px; margin-top: 6px; } .popbtns a { padding: 5px 8px; border-radius: 8px; background: #eef3fb; text-decoration: none; font-weight: 600; }
   .quick { display: flex; gap: 8px; flex-wrap: wrap; }
   .quick button { border: 1px solid var(--card); background: var(--card); color: var(--text); border-radius: 10px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
@@ -122,7 +123,8 @@ export const APP_HTML = /* html */ `<!doctype html>
     <div class="tabs"><button data-m="all" class="on">🏠 Новые</button><button data-m="fav">⭐ Избранное</button><button data-m="rank">🏆 Рейтинг</button></div>
     <span id="left"></span>
   </header>
-  <div class="filters" id="filters"><button id="both">💞 Нравится обоим</button><button id="okf">✅ Всё подходит</button></div>
+  <div class="filters" id="filters"><button id="both">💞 Нравится обоим</button><button id="okf" title="Лифт, гараж, T3+, от 2 санузлов, до школы меньше 20 мин">✅ Всё подходит</button></div>
+  <div class="okhint" id="okhint">✅ = лифт · гараж · T3 и больше · от 2 санузлов · до школы меньше 20 мин. Если что-то из этого неизвестно, квартира не попадает.</div>
   <div id="stack"></div>
   <div id="rankwrap" style="position:relative;flex:1;min-height:0;display:none"><div id="rank"></div></div>
   <nav>
@@ -415,7 +417,7 @@ export const APP_HTML = /* html */ `<!doctype html>
         r.onclick = () => { first = c.id; setMode('fav'); };
         box.appendChild(r);
       });
-      box.appendChild(el('p', 'why', 'Баллы из 100: цена 25, дорога до школы 25, площадь 15, цена за м² против района 15, состояние 10, удобства 10. Нажмите на строку, чтобы открыть карточку; галочки — для сравнения.'));
+      box.appendChild(el('p', 'why', 'Баллы из 100: цена 25, дорога до школы 25, площадь 15, цена за м² против района 15, состояние 10, удобства 10. Нажмите на строку, чтобы открыть карточку; галочки — для сравнения. ✅ = лифт, гараж, T3+, от 2 санузлов и до школы меньше 20 мин.'));
     } catch (e) {
       box.innerHTML = '<p style="text-align:center;color:var(--hint)">Не удалось загрузить. Нажмите ⋯ → «Обновить страницу».</p>';
     }
@@ -440,6 +442,7 @@ export const APP_HTML = /* html */ `<!doctype html>
     $('filters').style.display = m === 'all' ? 'none' : 'flex';
     $('both').classList.toggle('on', bothOnly);
     $('okf').classList.toggle('on', okOnly);
+    $('okhint').style.display = m !== 'all' && okOnly ? 'block' : 'none';
     cards = []; total = 0; judged = 0; history.length = 0; sent.clear(); failed = ''; viewed.length = 0; favTotal = null;
     if (rank) { loadRank(); return; }
     render();
