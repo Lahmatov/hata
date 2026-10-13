@@ -9,6 +9,7 @@ function memKV(): KV & { data: Map<string, { v: string; metadata?: unknown }>; o
   return {
     data, ops,
     async get(k) { const e = data.get(k); return e ? JSON.parse(e.v) : null; },
+    async getWithMetadata(k) { const e = data.get(k); return { value: e ? e.v : null, metadata: e?.metadata ?? null }; },
     async put(k, v, o) { ops.put++; data.set(k, { v, metadata: o?.metadata }); },
     async delete(k) { ops.del++; data.delete(k); },
     async list({ prefix }) {
@@ -50,6 +51,33 @@ test.describe('telegram worker', () => {
     expect(text.indexOf('Carnaxide')).toBeLessThan(text.indexOf('Alfragide'));
     expect(text).toContain('(ещё 1 уже сняты с продажи)');
     expect(favouritesText(new Set(), cat, now)).toContain('пока пусто');
+  });
+
+  test('💞 the second like of a flat tells both chats once; a repeat press or a 👎 does not', async () => {
+    const kv = memKV();
+    await kv.put('catalogue', JSON.stringify({ g1: { t: 'Benfica', u: 'https://x/1', p: 395000, a: 112, c: 14, s: '2026-10-12', m: [], q: 80 } }));
+    const sent: [string, string][] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init: { body: string }) => {
+      const b = JSON.parse(init.body);
+      if (String(url).endsWith('/sendMessage')) sent.push([String(b.chat_id), b.text]);
+      return new Response(JSON.stringify({ ok: true }));
+    }) as typeof fetch;
+    try {
+      const env = { KV: kv, TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1,2' };
+      await applyReaction(env, 'like', '1', 'g1');
+      expect(sent).toEqual([]);
+      await applyReaction(env, 'super', '2', 'g1');
+      expect(sent.map((x) => x[0])).toEqual(['2', '1']);
+      expect(sent[0][1]).toContain('Совпадение');
+      expect(sent[0][1]).toContain('395 тыс. € · 112 м² · 🚗 14 мин · 🏆 80');
+      sent.length = 0;
+      await applyReaction(env, 'like', '2', 'g1'); // already liked: no second match
+      await applyReaction(env, 'hide', '1', 'g1');
+      expect(sent).toEqual([]);
+    } finally {
+      globalThis.fetch = orig;
+    }
   });
 
   test('derived secrets match the GitHub side (node:crypto)', async () => {
