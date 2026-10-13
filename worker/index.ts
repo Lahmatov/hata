@@ -14,7 +14,9 @@ export interface KV {
   delete(key: string): Promise<void>;
   list(opts: { prefix: string; cursor?: string }): Promise<{ keys: { name: string; metadata?: unknown }[]; list_complete: boolean; cursor?: string }>;
 }
-export interface Env { KV: KV; TELEGRAM_BOT_TOKEN: string; TELEGRAM_CHAT_ID: string; APP_URL?: string }
+// MAPS_EMBED_KEY: optional Google Maps Embed API key (a browser key, restricted to this worker's address) for
+// Street View inside the app; without it "walk around" opens Google Maps.
+export interface Env { KV: KV; TELEGRAM_BOT_TOKEN: string; TELEGRAM_CHAT_ID: string; APP_URL?: string; MAPS_EMBED_KEY?: string }
 
 /**
  * One flat as pushed by the monitor (key 'catalogue', small: no photos): place, url, price, area, commute,
@@ -413,7 +415,7 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
       .filter((c) => !exclude.has(c.id) && (!fav || !body.both || (liked(c.me) && liked(c.ot))) && (!fav || !body.ok || c.ok === 1));
     const notes = fav ? await listNotes(env.KV) : {};
     for (const c of all) if (notes[c.id]) c.nt = notes[c.id];
-    if (fav && body.slim) return json({ total: all.length, cards: all, names: await names(env) });
+    if (fav && body.slim) return json({ total: all.length, cards: all, names: await names(env), ek: env.MAPS_EMBED_KEY || undefined });
     const at = body.first ? all.findIndex((c) => c.id === body.first) : -1;
     if (at > 0) all.unshift(...all.splice(at, 1));
     const page = all.slice(0, 20);
@@ -422,7 +424,7 @@ async function appApi(req: Request, env: Env, path: string): Promise<Response> {
       chunks.set(n, ((await env.KV.get(`cards:${n}`, 'json')) ?? {}) as Record<string, CardDetails>);
     }
     const cards = page.map((c) => ({ ...c, ...(c.n !== undefined ? chunks.get(c.n)?.[c.id] : undefined) }));
-    return json({ total: all.length, cards, names: fav ? await names(env) : undefined });
+    return json({ total: all.length, cards, names: fav ? await names(env) : undefined, ek: env.MAPS_EMBED_KEY || undefined });
   }
   if (path === '/api/export') return json({ ok: true, rows: await sendTable(env, user) });
   if (path === '/api/cards') {
