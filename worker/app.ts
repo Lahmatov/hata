@@ -251,7 +251,8 @@ export const APP_HTML = /* html */ `<!doctype html>
     const wrap = el('div', 'cmp'); wrap.appendChild(table); box.appendChild(wrap);
   }
 
-  // 🗺 Map of favourites (OpenStreetMap tiles, Leaflet loaded on first use).
+  // 🗺 Map of favourites (CARTO Voyager tiles over OpenStreetMap data, no key; Leaflet loaded on first use).
+  // tile.openstreetmap.org refuses requests without a Referer, which Telegram's in-app browser may not send.
   function loadLeaflet() {
     if (window.L) return Promise.resolve();
     return new Promise((ok, fail) => {
@@ -267,7 +268,8 @@ export const APP_HTML = /* html */ `<!doctype html>
     box.appendChild(el('p', 'why', 'Нажмите на точку, чтобы открыть квартиру. Цена в тыс. €. 🔵 суперлайк · 🔴 нравится обоим · 🟢 одному · серый: отказ · пунктир: адрес известен только до района · 🏫 школа'));
     try { await loadLeaflet(); } catch (e) { m.textContent = 'Карта не загрузилась, проверьте интернет'; return; }
     const map = L.map(m).setView(SCHOOL, 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      { maxZoom: 19, subdomains: 'abcd', attribution: '© OpenStreetMap · © CARTO' }).addTo(map);
     L.marker(SCHOOL, { icon: L.divIcon({ html: '🏫', className: '', iconSize: [24, 24] }) }).addTo(map).bindPopup('PaRK International School');
     const pts = [SCHOOL];
     const placed = list.filter((c) => c.g);
