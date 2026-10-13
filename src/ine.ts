@@ -58,7 +58,10 @@ export function ineMedian(prices: InePrices | undefined, l: Pick<Listing, 'munic
   if (!muni) return null;
   const parishes = prices.parish[muni] ?? {};
   const n = norm(l.neighborhood);
-  const parish = n ? Object.entries(parishes).find(([name]) => name === n || name.includes(n) || n.includes(name)) : undefined;
+  // Exact name first: "Benfica" must not match "São Domingos de Benfica"; then "Carnaxide e Queijas" inside
+  // "União das freguesias de Carnaxide e Queijas".
+  const entries = Object.entries(parishes);
+  const parish = n ? entries.find(([name]) => name === n) ?? entries.find(([name]) => name.endsWith(n) || n.endsWith(name)) : undefined;
   if (parish) return { v: parish[1], where: l.neighborhood! };
   return prices.muni[muni] ? { v: prices.muni[muni], where: l.municipality ?? l.neighborhood ?? '' } : null;
 }

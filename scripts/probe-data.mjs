@@ -1,47 +1,43 @@
-// One-off check from a GitHub runner: open-data sources for enriching favourites (round 2). Prints excerpts only.
+// One-off check from a GitHub runner (round 3): APA flood layers and EEA aircraft-noise mosaics by point.
 const UA = 'hata-apartment-monitor/1.0 (personal, non-commercial; github.com/Lahmatov/hata)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function get(label, url, timeout = 60000) {
+async function get(label, url) {
   console.log(`\n=== ${label}\n${url.slice(0, 400)}`);
   try {
-    const t0 = Date.now();
-    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(timeout) });
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(60000) });
     const text = await res.text();
-    console.log(`HTTP ${res.status} ${res.headers.get('content-type')} ${text.length} bytes in ${Date.now() - t0} ms`);
-    await sleep(1500);
+    console.log(`HTTP ${res.status} ${text.length} bytes`);
+    await sleep(1200);
     return text;
   } catch (e) { console.log(`ERROR ${e.message}`); return ''; }
 }
 const json = (t) => { try { return JSON.parse(t); } catch { return null; } };
+const POINTS = [['Campo Grande (under the approach)', 38.7585, -9.1570], ['Benfica', 38.7505, -9.2008], ['Carnide', 38.7600, -9.1880],
+  ['Alfragide (school)', 38.7358, -9.2261], ['Odivelas', 38.7929, -9.1838], ['Póvoa Sto Adrião', 38.7998, -9.1655], ['Mem Martins', 38.7980, -9.3320]];
 
-// 1. INE: freguesia codes from the metadata (dimension 2)
-const meta = json(await get('INE meta', 'https://www.ine.pt/ine/json_indicador/pindicaMeta.jsp?varcd=0012234&lang=PT'));
-const cats = meta?.[0]?.Dimensoes?.Categoria_Dim ?? [];
-const dim2 = cats.flatMap((c) => Object.entries(c)).filter(([k]) => k.startsWith('Dim_Num2')).flatMap(([, v]) => v);
-console.log('dim2 entries:', dim2.length, 'sample:', JSON.stringify(dim2[0]));
-const ours = dim2.filter((x) => /^1A01(106|115|110|111|116)/.test(x.cat_id));
-console.log(ours.map((x) => `${x.cat_id}=${x.categ_dsg}`).join(' | '));
-const dim3 = cats.flatMap((c) => Object.entries(c)).filter(([k]) => k.startsWith('Dim_Num3')).flatMap(([, v]) => v);
-console.log('dim3:', dim3.map((x) => `${x.cat_id}=${x.categ_dsg}`).join(' | '));
-const fr = ours.filter((x) => x.cat_id.length > 7).map((x) => x.cat_id);
-for (let i = 0; i < fr.length; i += 30) {
-  const d = json(await get(`INE freguesias ${i}`, `https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012234&lang=PT&Dim2=${fr.slice(i, i + 30).join(',')}&Dim3=H1`));
-  const rows = Object.values(d?.[0]?.Dados ?? {})[0] ?? [];
-  console.log(rows.map((r) => `${r.geocod} ${r.geodsg}: ${r.valor ?? r.Sinal_Conv ?? '-'}`).join('\n'));
-}
-
-// 2. APA flood: query (not identify) on the flood-area and ARPSI layers, small envelope, WGS84
-for (const [name, lat, lon] of [['Odivelas centro', 38.7929, -9.1838], ['Póvoa Sto Adrião (Trancão)', 38.7998, -9.1655], ['Benfica', 38.7505, -9.2008]]) {
-  for (const [svc, layer] of [['Diretiva200760CE_2c', 0], ['Risco_Inundacao_Potencialmente_Significativas', 0]]) {
-    const t = await get(`APA ${svc}/${layer} at ${name}`, `https://sniambgeoogc.apambiente.pt/getogc/rest/services/SNIAmb/${svc}/MapServer/${layer}/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`);
-    console.log(t.slice(0, 700));
+// APA flood: layer details, then a point query on each feature layer
+const svc = 'https://sniambgeoogc.apambiente.pt/getogc/rest/services/SNIAmb/Diretiva200760CE_2c/MapServer';
+const layers = json(await get('APA flood layers (full)', `${svc}/layers?f=json`))?.layers ?? [];
+for (const l of layers) console.log(`${l.id}: ${l.name} | ${l.type} | geom=${l.geometryType} | sub=${JSON.stringify(l.subLayers?.map((s) => s.id))} | fields=${(l.fields ?? []).map((f) => f.name).join(',').slice(0, 200)}`);
+for (const l of layers.filter((x) => x.type === 'Feature Layer').slice(0, 6)) {
+  for (const [name, lat, lon] of POINTS.slice(4, 6)) {
+    const t = await get(`APA flood ${l.id} ${l.name} at ${name}`, `${svc}/${l.id}/query?geometry=${encodeURIComponent(JSON.stringify({ x: lon, y: lat, spatialReference: { wkid: 4326 } }))}&geometryType=esriGeometryPoint&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`);
+    console.log(t.slice(0, 500));
   }
 }
+const arpsi = 'https://sniambgeoogc.apambiente.pt/getogc/rest/services/SNIAmb/Risco_Inundacao_Potencialmente_Significativas/MapServer/0/query';
+const near = await get('APA ARPSI within 3 km of Odivelas', `${arpsi}?geometry=-9.1838,38.7929&geometryType=esriGeometryPoint&inSR=4326&distance=3000&units=esriSRUnit_Meter&spatialRel=esriSpatialRelIntersects&outFields=name,local&returnGeometry=false&f=json`);
+console.log(near.slice(0, 800));
 
-// 3. EEA airport noise: all services, then airport-related layer lists and a point query near Benfica
-const svcs = json(await get('EEA Noise services', 'https://noise.discomap.eea.europa.eu/arcgis/rest/services/Noise?f=json'))?.services ?? [];
-console.log(svcs.map((s) => `${s.name}:${s.type}`).join(' | '));
-for (const s of svcs.filter((s) => /airport|air|Contour|Dyna/i.test(s.name)).slice(0, 8)) {
-  const j = json(await get(`EEA ${s.name} layers`, `https://noise.discomap.eea.europa.eu/arcgis/rest/services/${s.name}/${s.type}?f=json`));
-  console.log((j?.layers ?? []).map((l) => `${l.id}:${l.name}`).join(' | ').slice(0, 1200) || JSON.stringify(j).slice(0, 400));
+// EEA aircraft noise mosaics: service info (pixel type, value meaning), then identify per point
+for (const s of ['mosaic_air_day', 'mosaic_air_night']) {
+  const info = json(await get(`EEA ${s} info`, `https://noise.discomap.eea.europa.eu/arcgis/rest/services/Noise/${s}/ImageServer?f=json`));
+  if (info) console.log(JSON.stringify({ name: info.name, description: (info.description ?? '').slice(0, 600), pixelType: info.pixelType, bandCount: info.bandCount, minValues: info.minValues, maxValues: info.maxValues, hasRasterAttributeTable: info.hasRasterAttributeTable, copyright: info.copyrightText }));
+  for (const [name, lat, lon] of POINTS) {
+    const t = await get(`EEA ${s} at ${name}`, `https://noise.discomap.eea.europa.eu/arcgis/rest/services/Noise/${s}/ImageServer/identify?geometry=${encodeURIComponent(JSON.stringify({ x: lon, y: lat, spatialReference: { wkid: 4326 } }))}&geometryType=esriGeometryPoint&returnGeometry=false&returnCatalogItems=false&f=json`);
+    const j = json(t);
+    console.log(j ? JSON.stringify({ value: j.value, properties: j.properties }).slice(0, 300) : t.slice(0, 300));
+  }
+  const rat = await get(`EEA ${s} raster attribute table`, `https://noise.discomap.eea.europa.eu/arcgis/rest/services/Noise/${s}/ImageServer/rasterAttributeTable?f=json`);
+  console.log(rat.slice(0, 1000));
 }

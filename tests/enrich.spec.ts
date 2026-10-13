@@ -22,9 +22,10 @@ test('nearby: closest of each kind, named stations only, short line', () => {
 });
 
 test('INE: parish median when published, else the municipality; the gap in percent', () => {
-  const prices: InePrices = { period: '1.º Trimestre de 2026', muni: { '1A01115': 3143, '1A01106': 5082 }, parish: { '1A01106': { benfica: 4500 } } };
+  const prices: InePrices = { period: '1.º Trimestre de 2026', muni: { '1A01115': 3143, '1A01106': 5082 }, parish: { '1A01106': { 'sao domingos de benfica': 5182, benfica: 4500 }, '1A01110': { 'uniao das freguesias de carnaxide e queijas': 3988 } } };
   expect(ineMedian(prices, { municipality: 'Lisboa', neighborhood: 'Benfica' })).toEqual({ v: 4500, where: 'Benfica' });
   expect(ineMedian(prices, { municipality: 'Amadora', neighborhood: 'Venteira' })).toEqual({ v: 3143, where: 'Amadora' });
+  expect(ineMedian({ ...prices, muni: { ...prices.muni, '1A01110': 4297 } }, { municipality: 'Oeiras', neighborhood: 'Carnaxide e Queijas' })?.v).toBe(3988);
   expect(ineMedian(prices, { municipality: 'Cascais', neighborhood: 'Parede' })).toBeNull();
   expect(ineLine(prices, mk({ municipality: 'Amadora', neighborhood: 'Venteira', price_per_m2: 3457 }))).toBe('📊 сделки в Amadora: 3 143 €/м² (INE, 12 мес.), эта на 10% дороже');
 });
