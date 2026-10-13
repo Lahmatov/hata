@@ -15,6 +15,7 @@ function memKV(init: Record<string, unknown> = {}, reactions: [string, string, s
   for (const [kind, chat, gid] of reactions) data.set(`v:${chat}:${gid}`, { v: '1', metadata: { kind, at: '' } });
   return {
     async get(k) { const e = data.get(k); return e ? JSON.parse(e.v) : null; },
+    async getWithMetadata(k) { const e = data.get(k); return { value: e ? e.v : null, metadata: e?.metadata ?? null }; },
     async put(k, v, o) { data.set(k, { v, metadata: o?.metadata }); },
     async delete(k) { data.delete(k); },
     async list({ prefix }) { return { keys: [...data].filter(([k]) => k.startsWith(prefix)).map(([name, e]) => ({ name, metadata: e.metadata })), list_complete: true }; },

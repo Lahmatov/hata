@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { adapters } from './adapters/index.ts';
 import { EMAIL_MAX_AGE_DAYS } from './adapters/email.ts';
+import { favouriteGroups, favouriteNews, favouriteNewsText } from './favwatch.ts';
 import { config, inTargetArea, locationUnknown } from './config.ts';
 import { Store } from './db.ts';
 import { groupDuplicates } from './dedupe.ts';
@@ -180,6 +181,14 @@ async function main() {
   }
   if (deferred.size) log.info(`commute: ${deferred.size} flat(s) wait for the next run (no answer from the router)`);
 
+  // ⭐ News about favourites (cheaper, gone, back): one message; their price drops are not repeated in the digest.
+  const favourites = favouriteGroups(store);
+  const favText = favouriteNewsText(favouriteNews(store, Date.now(), !DRY));
+  if (favText) {
+    if (DRY) console.log(favText);
+    else await sendTelegram(favText).catch((e) => log.warn(`favourites news: ${(e as Error).message}`));
+  }
+
   // Build digest: one item per duplicate group.
   const byGroup = new Map<string, DigestItem>();
   for (const s of seen) {
@@ -193,7 +202,7 @@ async function main() {
     const lastTold = Math.min(...members.map((m) => store.notifiedPrice(m.id) ?? Infinity));
     let group: DigestItem['group'] | null = null;
     if (!groupNotified) group = c.verdict === 'manual' ? 'manual' : 'new';
-    else if (l.price !== null && l.price < lastTold && c.verdict !== 'manual') group = 'drop';
+    else if (l.price !== null && l.price < lastTold && c.verdict !== 'manual' && !favourites.has(l.group_id)) group = 'drop';
     if (!group) continue;
     const prev = byGroup.get(l.group_id);
     if (prev && (prev.leader.price ?? Infinity) <= (l.price ?? Infinity)) continue; // keep cheapest offer as leader

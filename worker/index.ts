@@ -9,6 +9,7 @@ import { xlsx, type TableCell, type TableCol } from './xlsx.ts';
 
 export interface KV {
   get(key: string, type: 'json'): Promise<unknown>;
+  getWithMetadata(key: string): Promise<{ value: string | null; metadata: unknown }>;
   put(key: string, value: string, opts?: { metadata?: unknown }): Promise<void>;
   delete(key: string): Promise<void>;
   list(opts: { prefix: string; cursor?: string }): Promise<{ keys: { name: string; metadata?: unknown }[]; list_complete: boolean; cursor?: string }>;
@@ -102,6 +103,22 @@ export async function setReaction(kv: KV, kind: Kind | null, chat: string, gid: 
       await new Promise((r) => setTimeout(r, retryMs));
     }
   }
+}
+
+/** One person's current reaction to a flat (v: key, else an older r: key); undefined when none or taken back. */
+export async function reactionOf(kv: KV, chat: string, gid: string): Promise<Kind | undefined> {
+  const v = await kv.getWithMetadata(vKey(chat, gid));
+  if (v.value !== null) return (v.metadata as { kind?: Kind } | null)?.kind;
+  for (const k of ['super', 'like', 'hide'] as const) if ((await kv.getWithMetadata(`r:${k}:${chat}:${gid}`)).value !== null) return k;
+  return undefined;
+}
+
+/** 💞 message when both of you like the same flat. */
+export function matchText(x: CatalogueItem | undefined, superLike: boolean): string {
+  if (!x) return '💞 Совпадение! Вам обоим понравилась квартира. Она в «⭐ Избранное».';
+  const facts = [x.p ? `${Math.round(x.p / 1000)} тыс. €` : null, x.a ? `${Math.round(x.a)} м²` : null,
+    x.c !== null ? `🚗 ${Math.round(x.c)} мин` : null, x.q !== undefined ? `🏆 ${x.q}` : null].filter(Boolean).join(' · ');
+  return `💞 <b>Совпадение!</b>${superLike ? ' 🌟' : ''} Вам обоим нравится:\n<a href="${esc(x.u)}">${esc(x.t)}</a>\n${esc(facts)}\n\nЗвоним? Все совпадения в «🏠 Свайпы» → «⭐ Избранное».`;
 }
 
 /** 👍 (or 🌟) flats still on sale (seen by the monitor in the last 3 days), closest to school first. */
@@ -212,8 +229,22 @@ interface Update {
  * round, where the other person may still like the flat, so only this chat's post goes.
  */
 export async function applyReaction(env: Env, kind: Kind, chat: string, gid: string, pressedMessageId?: number, mineOnly = false) {
+  const liking = kind !== 'hide';
+  const before = liking ? await reactionOf(env.KV, chat, gid) : undefined;
   await setReaction(env.KV, kind, chat, gid);
   const cat = ((await env.KV.get('catalogue', 'json')) ?? {}) as Catalogue;
+  // 💞 This press makes a flat liked by both of you: tell both chats.
+  if (liking && before !== 'like' && before !== 'super') {
+    const partners = chatIds(env).filter((c) => c !== chat);
+    for (const p of partners) {
+      const theirs = await reactionOf(env.KV, p, gid);
+      if (theirs === 'like' || theirs === 'super') {
+        const text = matchText(cat[gid], kind === 'super' || theirs === 'super');
+        for (const c of [chat, p]) await tg(env, 'sendMessage', { chat_id: c, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: replyKeyboard });
+        break;
+      }
+    }
+  }
   const posts = new Map<string, [string, number]>();
   for (const [c, id] of cat[gid]?.m ?? []) if ((kind === 'hide' && !mineOnly) || c === chat) posts.set(`${c}:${id}`, [c, id]);
   if (pressedMessageId) posts.set(`${chat}:${pressedMessageId}`, [chat, pressedMessageId]);
