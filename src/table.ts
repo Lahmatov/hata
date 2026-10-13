@@ -39,6 +39,6 @@ export function tableRow(l: Listing, c: Classified, s: Score, ctx: { members: Li
     l.commute_min === null ? null : Math.round(l.commute_min), ctx.near ?? '', ctx.flood ?? '', ctx.planes ?? '', l.commute_approx ? 'нет, район' : 'да', days(since, now),
     verdict, ruleBasedProsCons(l),
     { u: l.url, t: SOURCE_RU[l.source] ?? 'открыть' }, route ? { u: route, t: 'маршрут' } : '', others.join('\n'),
-    '', '', '', '',
+    '', '', '', '', '',
   ];
 }

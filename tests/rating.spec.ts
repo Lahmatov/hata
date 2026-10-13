@@ -149,6 +149,10 @@ test.describe('rating and favourites table', () => {
     expect(n.t).toHaveLength(300);
     expect((await saveNote(kv, 'g2', { s: 'hack', d: 'tomorrow' }, '2'))).toEqual({ by: '2', at: expect.any(String) });
     expect(Object.keys(await listNotes(kv)).sort()).toEqual(['g1', 'g2']);
+    // 📨 alone keeps the status, the note and the viewing time; sending r: false clears only it.
+    expect(await saveNote(kv, 'g1', { r: true }, '2')).toMatchObject({ s: 'viewing', d: '2026-10-16T18:00', r: 1, by: '2' });
+    expect((await saveNote(kv, 'g1', { r: false }, '2')).r).toBeUndefined();
+    expect((await listNotes(kv)).g1.s).toBe('viewing');
     const { cols, rows } = await favouritesTable(kv, { 1: 'Женя' });
     const col = (h: string) => rows[0][cols.findIndex((c) => c.h === h)];
     expect(col('Статус')).toBe('📅 просмотр');
