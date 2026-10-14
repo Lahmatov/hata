@@ -181,7 +181,7 @@ async function main() {
     log.warn(`${slot} digest for ${today} failed ${tries} times; waiting for the next slot`);
     return;
   }
-  if (!DRY && !SEED) store.kvSet(`tries:${runKey}`, tries + 1);
+  if (!DRY && !SEED && !flag('force')) store.kvSet(`tries:${runKey}`, tries + 1);
   const now = new Date().toISOString();
   log.info(`run start ${now} dry=${DRY} seed=${SEED}`);
   log.info('first run reads every listing page (6-10 s each), so it can take 20-40 min; later runs take a few minutes');
