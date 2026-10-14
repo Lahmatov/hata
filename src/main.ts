@@ -12,6 +12,7 @@ import { classify, worthEnriching } from './filter.ts';
 import { driveMinutes, knownPoint, listingPoint, routingLeft, schoolPoint } from './geo.ts';
 import { PoliteHttp } from './http.ts';
 import { log } from './log.ts';
+import { slotFor } from './schedule.ts';
 import { summarize } from './summarize.ts';
 import { buildPosts, clearChats, deletePosts, type DigestItem, esc, sendPost, sendTelegram } from './telegram.ts';
 import { chunks, favouritesText, processUpdates } from './bot.ts';
@@ -26,7 +27,7 @@ const opt = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.spli
 const DRY = flag('dry-run');
 const SEED = flag('seed'); // mark everything as already notified, send nothing (first run without a flood)
 const ONLY = opt('only')?.split(',');
-const LISBON_HOURS = opt('lisbon-hours')?.split(',').map(Number); // cron runs in UTC: proceed only in these Lisbon hours
+const LISBON_HOURS = opt('lisbon-hours')?.split(',').map(Number); // Lisbon hours the digests start at (see slotFor)
 
 const lisbonNow = () => new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Lisbon' }); // "2026-10-07 07:45:00"
 
@@ -155,8 +156,9 @@ function acquireLock(): boolean {
 
 async function main() {
   const [today, hour] = [lisbonNow().slice(0, 10), Number(lisbonNow().slice(11, 13))];
-  if (LISBON_HOURS && !LISBON_HOURS.includes(hour) && !flag('force')) {
-    log.info(`Lisbon hour is ${hour}, not in ${LISBON_HOURS}; exiting`);
+  const slot = flag('force') ? slotFor(hour) : slotFor(hour, LISBON_HOURS);
+  if (!slot) {
+    log.info(`Lisbon hour is ${hour}, before the first digest (${LISBON_HOURS}); exiting`);
     return;
   }
   if (!acquireLock()) {
@@ -164,9 +166,8 @@ async function main() {
     return;
   }
   const store = new Store();
-  // Three runs a day (07:45, 13:45, 19:45). The morning one always reports (also "nothing new" and failed
+  // Three digests a day (from 7, 13 and 19h). The morning one always reports (also "nothing new" and failed
   // sources); the others only write when there is something new.
-  const slot = hour < 11 ? 'morning' : hour < 17 ? 'day' : 'evening';
   const runKey = `${today}-${slot}`;
   if (!DRY && !SEED && !flag('force') && store.sentToday(runKey)) {
     log.info(`${slot} digest for ${today} already sent; use --force to resend`);

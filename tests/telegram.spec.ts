@@ -44,3 +44,11 @@ test.describe('telegram digest', () => {
     expect(posts[0].text).toContain('Источники с ошибками: Casa Sapo');
   });
 });
+
+test('digest slots: a late run still does its slot; before the first slot nothing runs', async () => {
+  const { slotFor } = await import('../src/schedule.ts');
+  const starts = [7, 13, 19];
+  expect([6, 7, 9, 12, 13, 14, 18, 19, 23].map((h) => slotFor(h, starts)))
+    .toEqual([null, 'morning', 'morning', 'morning', 'day', 'day', 'day', 'evening', 'evening']);
+  expect(slotFor(14)).toBe('day'); // manual --force runs: by the clock
+});
