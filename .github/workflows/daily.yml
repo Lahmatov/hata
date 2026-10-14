@@ -1,11 +1,11 @@
 name: daily-digest
-# Three runs a day at about 07:05, 13:05 and 19:05 Lisbon time.
-# Cron is UTC and Lisbon switches between UTC+1 (summer) and UTC+0 (winter): each slot has two triggers
-# one hour apart, and the script only proceeds when the Lisbon hour is 7, 13 or 19 (the other one exits at once).
-# The morning run always reports; the 13h and 19h runs only post when there is something new.
+# Three digests a day, from 07:00, 13:00 and 19:00 Lisbon time. GitHub starts scheduled runs late (often hours)
+# or skips them, so there is a trigger every hour: the first run in each slot does the digest, later ones in the
+# same slot and runs before 7h exit in seconds (cron is UTC; Lisbon is UTC+1 in summer, UTC+0 in winter).
+# The morning digest always reports; the 13h and 19h ones only post when there is something new.
 on:
   schedule:
-    - cron: '5 6,7,12,13,18,19 * * *'
+    - cron: '5 5-22 * * *'
   workflow_dispatch:
     inputs:
       args:
@@ -71,7 +71,7 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             npx tsx src/main.ts --lisbon-hours=7,13,19
           else
-            npx tsx src/main.ts ${{ github.event.inputs.args }}
+            npx tsx src/main.ts --lisbon-hours=7,13,19 ${{ github.event.inputs.args }}
           fi
       - name: Save state
         if: always()
