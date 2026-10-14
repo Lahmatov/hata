@@ -156,7 +156,8 @@ function acquireLock(): boolean {
 
 async function main() {
   const [today, hour] = [lisbonNow().slice(0, 10), Number(lisbonNow().slice(11, 13))];
-  const slot = flag('force') ? slotFor(hour) : slotFor(hour, LISBON_HOURS);
+  // A manual run (--force, --dry-run) before the first slot (e.g. 6h) counts as the morning digest.
+  const slot = slotFor(hour, LISBON_HOURS) ?? (flag('force') || DRY || SEED ? 'morning' : null);
   if (!slot) {
     log.info(`Lisbon hour is ${hour}, before the first digest (${LISBON_HOURS}); exiting`);
     return;
@@ -173,6 +174,14 @@ async function main() {
     log.info(`${slot} digest for ${today} already sent; use --force to resend`);
     return;
   }
+  // A run that keeps failing (Telegram down, a crash) is retried once in its slot, not every hour: each try reads
+  // every site and spends the Idealista quota. The counter is saved even when the run crashes.
+  const tries = store.kvGet<number>(`tries:${runKey}`) ?? 0;
+  if (!DRY && !SEED && !flag('force') && tries >= 2) {
+    log.warn(`${slot} digest for ${today} failed ${tries} times; waiting for the next slot`);
+    return;
+  }
+  if (!DRY && !SEED) store.kvSet(`tries:${runKey}`, tries + 1);
   const now = new Date().toISOString();
   log.info(`run start ${now} dry=${DRY} seed=${SEED}`);
   log.info('first run reads every listing page (6-10 s each), so it can take 20-40 min; later runs take a few minutes');

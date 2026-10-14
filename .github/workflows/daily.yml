@@ -71,7 +71,7 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             npx tsx src/main.ts --lisbon-hours=7,13,19
           else
-            npx tsx src/main.ts ${{ github.event.inputs.args }}
+            npx tsx src/main.ts --lisbon-hours=7,13,19 ${{ github.event.inputs.args }}
           fi
       - name: Save state
         if: always()
